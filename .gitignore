@@ -1,0 +1,34 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data files (protect sensitive ERP ad data)
+*.xlsx
+*.xls
+*.csv
+
+# Cache and local environments
+.cache/
+.env
+venv/
+ENV/
+.idea/
+.vscode/
+
+# Binaries and archives
+*.exe
+*.zip
+*.bak
+
+# Workbuddy and IDE temps
+.workbuddy*
+.wbapp*
+_analysis/
+ad_tool/
+
+# Logs and test scripts
+*.log
+scratch/
+test_*.py
+verify_*.py

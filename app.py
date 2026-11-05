@@ -1,0 +1,1169 @@
+import io
+import os
+import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+from data_loader.loader import (
+    load_single_file,
+    identify_table_type,
+    TABLE_CONFIG,
+)
+from data_loader.sku_mapper import (
+    load_sku_mapping,
+    apply_sku_mapping,
+    generate_sku_template,
+    generate_daily_trend_template,
+)
+from analyzer import (
+    summarize_overview,
+    agg_metrics,
+    analyze_campaign_health,
+    ALL_CAMPAIGN_TAGS,
+    mine_search_terms,
+    analyze_keyword_bids,
+    diagnose_ad_items,
+    analyze_placements,
+    build_action_items,
+    build_sku_trend_data,
+    extract_period_label,
+    generate_store_overview_analysis,
+    generate_product_matrix_analysis,
+    get_decision_mapping_guide,
+)
+
+# =========================================================================
+# 页面基础配置与高质感商用样式
+# =========================================================================
+st.set_page_config(
+    page_title="领星×沃尔玛广告自动化分析工具",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+st.markdown(
+    """
+    <style>
+    .stApp {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    
+    /* 隐藏顶部烦人的开发提示与多余边距 */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .stDeployButton {display:none;}
+    
+    /* 响应式 KPI 卡片网格 */
+    .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+        margin: 14px 0 16px 0;
+    }
+    @media (max-width: 1100px) {
+        .kpi-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+    @media (max-width: 768px) {
+        .kpi-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+    .kpi-card {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 12px 14px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+    .kpi-label {
+        color: #64748b;
+        font-size: 12.5px;
+        font-weight: 500;
+        margin-bottom: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .kpi-value {
+        color: #0f172a;
+        font-size: clamp(16px, 1.3vw, 21px);
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: visible;
+        letter-spacing: -0.3px;
+    }
+    
+    /* 运营决策摘要卡片 */
+    .summary-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-left: 4px solid #2563eb;
+        border-radius: 6px;
+        padding: 16px 20px;
+        margin: 14px 0 22px 0;
+        line-height: 1.8;
+    }
+    .summary-item {
+        margin: 6px 0;
+        font-size: 14px;
+        color: #334155;
+    }
+    .summary-badge {
+        display: inline-block;
+        padding: 1px 8px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 4px;
+        margin-right: 6px;
+    }
+    .badge-blue { background: #eff6ff; color: #1d4ed8; }
+    .badge-red { background: #fef2f2; color: #b91c1c; }
+    .badge-green { background: #f0fdf4; color: #15803d; }
+    .badge-purple { background: #faf5ff; color: #7e22ce; }
+    .badge-gray { background: #f1f5f9; color: #475569; }
+    
+    /* 板块专属数据源状态栏 */
+    .source-bar {
+        background: #f1f5f9;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 10px 14px;
+        margin-bottom: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .source-tag {
+        font-weight: 600;
+        color: #0f172a;
+        font-size: 13.5px;
+    }
+    .source-sub {
+        color: #475569;
+        font-size: 12.5px;
+    }
+    
+    /* 上传引导盒子 */
+    .upload-box {
+        background: #f8fafc;
+        border: 2px dashed #cbd5e1;
+        border-radius: 8px;
+        padding: 18px 20px;
+        margin-bottom: 14px;
+        text-align: center;
+    }
+
+    /* 诊断建议警示盒子 */
+    .advice-box {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-left: 4px solid #f59e0b;
+        border-radius: 6px;
+        padding: 12px 16px;
+        margin: 10px 0 16px 0;
+        line-height: 1.6;
+    }
+    .advice-box-danger {
+        border-left-color: #ef4444;
+        background: #fff5f5;
+    }
+    .advice-box-success {
+        border-left-color: #10b981;
+        background: #f0fdf4;
+    }
+    
+    .funnel-box {
+        background: #f8fafc;
+        border-radius: 6px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        border-left: 3px solid #64748b;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# =========================================================================
+# 数据缓存与高性能解析引擎（@st.cache_data 确保一秒加载，不重跑）
+# =========================================================================
+@st.cache_data(show_spinner=False)
+def parse_single_file_cached(file_name: str, file_bytes: bytes, forced_type: str = None):
+    """缓存单个文件的读取和清洗，基于字节流哈希，避免重复解析"""
+    bio = io.BytesIO(file_bytes)
+    bio.name = file_name
+    t_type, df, total_row = load_single_file(bio)
+    if forced_type:
+        t_type = forced_type
+    return t_type, df, total_row
+
+@st.cache_data(show_spinner=False)
+def parse_trend_data_cached(file_records_tuple: tuple, sku_map_items: tuple, target_acos: float):
+    """缓存多期/每日趋势分析的建模运算结果"""
+    sku_map = dict(sku_map_items) if sku_map_items else {}
+    records = []
+    for fname, fbytes in file_records_tuple:
+        bio = io.BytesIO(fbytes)
+        bio.name = fname
+        t_type, df, _ = load_single_file(bio)
+        if df is not None and not df.empty:
+            records.append({
+                "filename": fname,
+                "period": extract_period_label(fname, len(records) + 1),
+                "df": df,
+            })
+    if not records:
+        return pd.DataFrame(), pd.DataFrame(), [], pd.DataFrame()
+    return build_sku_trend_data(records, sku_map=sku_map, target_acos=target_acos)
+
+def fmt_money(val, default="N/A"):
+    if val is None or pd.isna(val):
+        return default
+    try:
+        return f"${float(val):,.2f}"
+    except (ValueError, TypeError):
+        return default
+
+def fmt_pct(val, default="N/A"):
+    if val is None or pd.isna(val):
+        return default
+    try:
+        return f"{float(val)*100:.2f}%"
+    except (ValueError, TypeError):
+        return default
+
+def fmt_num(val, default="N/A"):
+    if val is None or pd.isna(val):
+        return default
+    try:
+        return f"{int(round(float(val))):,}"
+    except (ValueError, TypeError):
+        return default
+
+def fmt_roas(val, default="N/A"):
+    if val is None or pd.isna(val):
+        return default
+    try:
+        return f"{float(val):.2f}x"
+    except (ValueError, TypeError):
+        return default
+
+# =========================================================================
+# Session State 初始化（保存上传数据和用户交互操作状态）
+# =========================================================================
+if "section_data" not in st.session_state:
+    st.session_state["section_data"] = {
+        "campaign": None,
+        "search_term": None,
+        "keyword": None,
+        "ad_item": None,
+        "platform": None,
+        "page_type": None,
+        "trend": None,
+    }
+
+if "file_names" not in st.session_state:
+    st.session_state["file_names"] = {}
+
+if "file_bytes_cache" not in st.session_state:
+    st.session_state["file_bytes_cache"] = {}
+
+if "sku_map" not in st.session_state:
+    st.session_state["sku_map"] = {}
+
+# 操作状态记忆
+if "selected_sku_code" not in st.session_state:
+    st.session_state["selected_sku_code"] = None
+
+if "trend_filter_choice" not in st.session_state:
+    st.session_state["trend_filter_choice"] = "全部 SKU"
+
+def update_section(sec_key: str, data: Any, filename: str, file_bytes: bytes = None):
+    """更新独立板块数据并保留字节流缓存"""
+    st.session_state["section_data"][sec_key] = data
+    st.session_state["file_names"][sec_key] = filename
+    if file_bytes is not None:
+        st.session_state["file_bytes_cache"][sec_key] = file_bytes
+
+# =========================================================================
+# 顶部标题栏
+# =========================================================================
+st.title("领星 × 沃尔玛广告自动化分析工具")
+st.caption("固定业务板块独立解析 · SKU 多期全景走势与突变预警 · 店铺与单品深度诊断 · 落地动作清单")
+
+# =========================================================================
+# 侧边栏：全局数据导入与诊断参数
+# =========================================================================
+st.sidebar.header("⚙️ 运营诊断参数")
+
+days_input = st.sidebar.number_input(
+    "报表统计天数（用于估算日均花费与预算撞顶）",
+    min_value=0,
+    max_value=365,
+    value=30,
+    step=1,
+    help="领星导出为区间累计数据。若输入天数（如 30 天），将按【日均花费 = 花费 / 天数】诊断预算跑不满或撞顶；置 0 则跳过预算评估。",
+)
+analysis_days = days_input if days_input > 0 else None
+
+target_acos_input = st.sidebar.slider(
+    "目标 / 保本 ACOS 警戒线 (%)",
+    min_value=10,
+    max_value=60,
+    value=25,
+    step=1,
+    help="跨境电商保本 ACOS 参数，用于标记广告投产亏损或侵蚀毛利的 SKU 与活动，对应保本 ROAS = 1 / ACOS",
+)
+target_acos = target_acos_input / 100.0
+
+# SKU 映射表
+st.sidebar.markdown("---")
+st.sidebar.subheader("🏷️ SKU 映射表（可选）")
+sku_file = st.sidebar.file_uploader(
+    "上传 SKU 映射表（.xlsx / .csv）",
+    type=["xlsx", "xls", "csv"],
+    help="上传后将把报表中的 Item ID 自动替换为店铺内部 SKU，方便直接核对具体产品",
+    key="global_sku_uploader",
+)
+
+if sku_file is not None:
+    try:
+        loaded_map, err = load_sku_mapping(sku_file)
+        if err:
+            st.sidebar.error(err)
+        else:
+            st.session_state["sku_map"] = loaded_map
+            st.sidebar.success(f"已识别 {len(loaded_map)} 个 SKU 映射")
+    except Exception as e:
+        st.sidebar.error(f"映射表解析失败: {e}")
+
+st.sidebar.download_button(
+    label="📄 下载 SKU 映射表模板",
+    data=generate_sku_template(),
+    file_name="SKU映射表模板.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+)
+
+# 侧边栏：当前板块数据常驻状态指示
+st.sidebar.markdown("---")
+st.sidebar.subheader("📋 各板块数据常驻状态")
+for key, name in [
+    ("trend", "📈 SKU多期走势"),
+    ("campaign", "① 广告活动报表"),
+    ("search_term", "② 搜索词报表"),
+    ("keyword", "③ 关键词报表"),
+    ("ad_item", "④ 商品广告列表"),
+    ("platform", "⑤ 平台报表"),
+    ("page_type", "⑤ 页面类型报表"),
+]:
+    data_val = st.session_state["section_data"].get(key)
+    f_val = st.session_state["file_names"].get(key)
+    if data_val is not None:
+        st.sidebar.caption(f"🟢 **{name}**：已就绪 ({f_val or '已加载'})")
+    else:
+        st.sidebar.caption(f"⚪ {name}：待上传对应文件")
+
+if st.sidebar.button("🗑️ 清空所有板块缓存", help="清空已加载的所有分析数据"):
+    st.session_state["section_data"] = {k: None for k in st.session_state["section_data"]}
+    st.session_state["file_names"] = {}
+    st.session_state["file_bytes_cache"] = {}
+    st.session_state["sku_map"] = {}
+    st.rerun()
+
+# =========================================================================
+# 固定板块导航（Tab 常驻固定，位置永久锁定）
+# =========================================================================
+tab_options = [
+    "📈 SKU多期趋势看板",
+    "🎯 综合决策与总动作清单",
+    "① 广告活动诊断",
+    "② 搜索词否词/挖词",
+    "③ 关键词调价",
+    "④ 商品位诊断",
+    "⑤ 平台与页面位置",
+]
+
+tabs = st.tabs(tab_options)
+
+# =========================================================================
+# 辅助函数：板块专属数据源与上传组件
+# =========================================================================
+def render_section_uploader(
+    sec_key: str,
+    title: str,
+    default_name: str,
+    help_text: str,
+    accept_multiple: bool = False,
+):
+    """
+    固定板块专属上传组件：
+    - 仅解析当前板块上传的文件；
+    - 解析结果缓存在 Session 中，不重跑其他板块；
+    - 毫秒级响应。
+    """
+    cur_data = st.session_state["section_data"].get(sec_key)
+    cur_fname = st.session_state["file_names"].get(sec_key)
+
+    if cur_data is not None:
+        c_left, c_right = st.columns([4, 1])
+        with c_left:
+            st.markdown(
+                f"""
+                <div class="source-bar">
+                    <div>
+                        <span class="source-tag">🟢 当前板块数据已就绪：【{cur_fname or default_name}】</span>
+                        <span class="source-sub">（已生成专属深度分析与优化建议）</span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with c_right:
+            if st.button("🗑️ 清除此板块", key=f"btn_clear_{sec_key}"):
+                update_section(sec_key, None, "", None)
+                st.rerun()
+
+        with st.expander("🔄 重新上传 / 替换此板块文件", expanded=False):
+            f_replace = st.file_uploader(
+                f"选择新表格替换【{default_name}】",
+                type=["xlsx", "xls", "csv"],
+                key=f"rep_{sec_key}",
+                accept_multiple_files=accept_multiple,
+            )
+            if f_replace:
+                return f_replace
+    else:
+        st.markdown(
+            f"""
+            <div class="upload-box">
+                <div style="font-size: 15px; font-weight: 600; color: #1e293b; margin-bottom: 6px;">
+                    📂 暂无【{default_name}】数据
+                </div>
+                <div style="font-size: 13px; color: #64748b; margin-bottom: 12px;">
+                    {help_text}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        f_new = st.file_uploader(
+            f"点击上传【{default_name}】(.xlsx / .csv)",
+            type=["xlsx", "xls", "csv"],
+            key=f"new_{sec_key}",
+            accept_multiple_files=accept_multiple,
+        )
+        if f_new:
+            return f_new
+    return None
+
+# =========================================================================
+# TAB 1: 📈 SKU 多期趋势看板（重点优化：深度图表 + 趋势分析 + 预警建议）
+# =========================================================================
+with tabs[0]:
+    st.markdown("### 📈 SKU / 商品每日及多期广告走势看板")
+    st.caption("基于多期/每日底层明细数据（如 10.3--11.1 报表），展现各 SKU 趋势波动曲线，提供失血预警与放量建议。")
+
+    t_file = render_section_uploader(
+        sec_key="trend",
+        title="SKU多期趋势",
+        default_name="SKU 每日/多期广告走势表",
+        help_text="请上传包含【日期】列与【SKU/Item Id】的多日广告报表（如 10.3--11.1.xlsx），或按天导出的多张走势表。单表上传即可自动识别全月每日明细！",
+        accept_multiple=True,
+    )
+
+    if t_file:
+        try:
+            with st.spinner("正在缓存并解析多期数据模型..."):
+                sku_items_tuple = tuple(sorted(st.session_state["sku_map"].items()))
+                if isinstance(t_file, list):
+                    file_tuple = tuple((f.name, f.getvalue()) for f in t_file)
+                    p_df, s_sum, anoms, d_macro = parse_trend_data_cached(
+                        file_tuple, sku_items_tuple, target_acos
+                    )
+                    update_section("trend", {
+                        "period_df": p_df, "sku_summary": s_sum, "anomalies": anoms, "daily_macro": d_macro
+                    }, f"多表合并 ({len(t_file)}张报表)")
+                else:
+                    file_tuple = ((t_file.name, t_file.getvalue()),)
+                    p_df, s_sum, anoms, d_macro = parse_trend_data_cached(
+                        file_tuple, sku_items_tuple, target_acos
+                    )
+                    update_section("trend", {
+                        "period_df": p_df, "sku_summary": s_sum, "anomalies": anoms, "daily_macro": d_macro
+                    }, t_file.name)
+                    # 同时为商品位诊断备用
+                    if st.session_state["section_data"].get("ad_item") is None:
+                        t_type, single_df, _ = parse_single_file_cached(t_file.name, t_file.getvalue(), "ad_item")
+                        update_section("ad_item", single_df, t_file.name)
+                st.rerun()
+        except Exception as e:
+            st.error(f"走势数据解析建模失败: {e}")
+
+    trend_payload = st.session_state["section_data"].get("trend")
+
+    if trend_payload is not None:
+        period_df = trend_payload["period_df"]
+        sku_summary_df = trend_payload["sku_summary"]
+        anomalies = trend_payload["anomalies"]
+        daily_macro = trend_payload["daily_macro"]
+
+        n_skus = len(sku_summary_df)
+        n_periods = period_df["周期"].nunique() if not period_df.empty else 0
+        min_date = period_df["周期"].min() if not period_df.empty else ""
+        max_date = period_df["周期"].max() if not period_df.empty else ""
+
+        # 绿色成功提示横幅（严格满足需求：确认数据没有漏传，让运营人员心里有底）
+        match_note = "（与设定的统计天数一致）" if (analysis_days and n_periods == analysis_days) else (
+            f"（设定天数: {analysis_days}天，已匹配当前明细天数）" if analysis_days else ""
+        )
+        st.success(
+            f"✅ **已成功读取数据**：包含 **{n_skus}** 个 SKU，时间跨度 **{min_date} ~ {max_date}**（共 **{n_periods}** 天{match_note}），全量数据校验完成无遗漏！"
+        )
+
+        bad_anoms = [a for a in anomalies if a.get("类别") == "异常变差"]
+        good_anoms = [a for a in anomalies if a.get("类别") == "变好向好"]
+
+        # 1. 顶部宏观统计卡片
+        m1, m2, m3, m4, m5 = st.columns(5)
+        with m1:
+            st.metric("监控 SKU 总数", f"{n_skus} 款")
+        with m2:
+            st.metric("数据时间跨度", f"{n_periods} 天", f"{min_date} ~ {max_date}")
+        with m3:
+            st.metric("🚨 失血/恶化预警款", f"{len(bad_anoms)} 款", "急需降价止血")
+        with m4:
+            st.metric("🚀 强势放量爆款", f"{len(good_anoms)} 款", "建议加大预算")
+        with m5:
+            tot_spend = sku_summary_df["总花费"].sum() if not sku_summary_df.empty else 0.0
+            tot_sales = sku_summary_df["总销售额"].sum() if not sku_summary_df.empty else 0.0
+            ov_roas = (tot_sales / tot_spend) if tot_spend > 0 else 0.0
+            st.metric("全周期整体投产", f"{ov_roas:.2f}x", f"总花费 {fmt_money(tot_spend)}")
+
+        # 2. 全店每日走势大盘折线/柱状复合图
+        if not daily_macro.empty and len(daily_macro) >= 2:
+            with st.expander("📊 点击展开/收起：全店 30 天每日广告大盘走势总览图", expanded=True):
+                fig_macro = make_subplots(specs=[[{"secondary_y": True}]])
+                fig_macro.add_trace(
+                    go.Bar(
+                        x=daily_macro["周期"],
+                        y=daily_macro["广告花费"],
+                        name="每日总花费 ($)",
+                        marker_color="#94a3b8",
+                        opacity=0.75,
+                    ),
+                    secondary_y=False,
+                )
+                fig_macro.add_trace(
+                    go.Bar(
+                        x=daily_macro["周期"],
+                        y=daily_macro["总销售额"],
+                        name="每日总销售额 ($)",
+                        marker_color="#3b82f6",
+                        opacity=0.85,
+                    ),
+                    secondary_y=False,
+                )
+                fig_macro.add_trace(
+                    go.Scatter(
+                        x=daily_macro["周期"],
+                        y=daily_macro["ROAS"],
+                        name="每日整体 ROAS",
+                        mode="lines+markers",
+                        line=dict(color="#10b981", width=3),
+                        marker=dict(size=7),
+                    ),
+                    secondary_y=True,
+                )
+                ref_roas_val = round(1.0 / target_acos, 2)
+                fig_macro.add_hline(
+                    y=ref_roas_val,
+                    line_dash="dot",
+                    line_color="#ef4444",
+                    annotation_text=f"保本 ROAS ({ref_roas_val}x)",
+                    annotation_position="bottom right",
+                    secondary_y=True,
+                )
+                fig_macro.update_layout(
+                    title="全店每日花费、销售额与整体 ROAS 演变趋势",
+                    xaxis_title="日期 / 周期",
+                    yaxis=dict(title="金额 ($)"),
+                    yaxis2=dict(title="ROAS", overlaying="y", side="right", showgrid=False),
+                    barmode="group",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    height=360,
+                    margin=dict(l=40, r=40, t=50, b=40),
+                )
+                st.plotly_chart(fig_macro, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+
+        # 3. 🚨 重点 SKU 突变预警与放量诊断看板
+        if anomalies:
+            st.markdown("#### 🚨 重点关注 SKU 异动诊断与预警清单")
+            anom_df = pd.DataFrame(anomalies)
+            st.dataframe(
+                anom_df[["类别", "状态表现", "SKU展示", "近期花费", "近期订单", "近期ROAS", "核心诊断", "优化建议"]],
+                column_config={
+                    "类别": st.column_config.TextColumn("预警类别", width="small"),
+                    "状态表现": st.column_config.TextColumn("走势标签", width="small"),
+                    "SKU展示": st.column_config.TextColumn("SKU (Item ID)", width="medium"),
+                    "近期花费": st.column_config.NumberColumn("近期花费 ($)", format="$%.2f"),
+                    "近期订单": st.column_config.NumberColumn("近期订单", format="%d"),
+                    "近期ROAS": st.column_config.NumberColumn("近期 ROAS", format="%.2f"),
+                    "核心诊断": st.column_config.TextColumn("数据异动剖析", width="large"),
+                    "优化建议": st.column_config.TextColumn("落地行动预警", width="large"),
+                },
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        st.markdown("---")
+
+        # 4. 单 SKU 深度走势图表与落地预警建议
+        st.markdown("#### 🔍 单 SKU 深度走势可视化与策略诊断")
+
+        all_skus = list(sku_summary_df["SKU"].unique()) if not sku_summary_df.empty else []
+        sku_name_dict = sku_summary_df.set_index("SKU")["SKU展示"].to_dict()
+
+        def format_sku_option(sku_code):
+            return sku_name_dict.get(sku_code, sku_code)
+
+        # 记忆用户选中的 SKU
+        default_sku_idx = 0
+        if st.session_state["selected_sku_code"] in all_skus:
+            default_sku_idx = all_skus.index(st.session_state["selected_sku_code"])
+
+        c_sel1, c_sel2 = st.columns([3, 1])
+        with c_sel1:
+            selected_sku = st.selectbox(
+                "选择需深入剖析的商品 SKU：",
+                all_skus,
+                format_func=format_sku_option,
+                index=default_sku_idx,
+            )
+            st.session_state["selected_sku_code"] = selected_sku
+        with c_sel2:
+            st.download_button(
+                label="📄 下载走势示例模板",
+                data=generate_daily_trend_template(),
+                file_name="SKU每日广告数据趋势模板.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+        if selected_sku and not period_df.empty:
+            sku_rows = period_df[period_df["SKU"] == selected_sku].sort_values(by="周期").reset_index(drop=True)
+            sku_info = sku_summary_df[sku_summary_df["SKU"] == selected_sku].iloc[0]
+
+            # 诊断与预警建议卡片
+            status_tag = sku_info["趋势状态"]
+            is_bad = "🚨" in status_tag or "失血" in status_tag or "萎缩" in status_tag
+            is_good = "🚀" in status_tag or "🌟" in status_tag or "放量" in status_tag
+            box_class = "advice-box-danger" if is_bad else ("advice-box-success" if is_good else "advice-box")
+
+            st.markdown(
+                f"""
+                <div class="advice-box {box_class}">
+                    <div style="font-weight: 700; font-size: 15px; margin-bottom: 6px;">
+                        📌 【{sku_info['SKU展示']}】 走势评级：<span style="color: {'#dc2626' if is_bad else ('#16a34a' if is_good else '#2563eb')}">{status_tag}</span>
+                    </div>
+                    <div style="font-size: 13.5px; color: #334155; margin-bottom: 4px;">
+                        <strong>数据特征剖析：</strong> {sku_info['数据特征剖析']}（累计花费 ${sku_info['总花费']:,.2f}，出单 {sku_info['总订单']}，整体 ROAS {sku_info['整体ROAS']}）
+                    </div>
+                    <div style="font-size: 14px; font-weight: 600; color: #0f172a;">
+                        👉 <strong>运营行动建议：</strong> {sku_info['建议预警动作']}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            # 双图联动：主图（花费/销售/ROAS） + 副图（订单/CPC/CVR）
+            fig_sku = make_subplots(
+                rows=2, cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.10,
+                row_heights=[0.6, 0.4],
+                subplot_titles=(f"{sku_info['SKU展示']} 每日花费、销售额与 ROAS 变动走势", "转化承接透视：订单量、点击成本 (CPC) 与转化率 (CVR)"),
+                specs=[[{"secondary_y": True}], [{"secondary_y": True}]],
+            )
+
+            # Row 1: 花费、销售额、ROAS
+            fig_sku.add_trace(
+                go.Bar(
+                    x=sku_rows["周期"],
+                    y=sku_rows["广告花费"],
+                    name="广告花费 ($)",
+                    marker_color="#94a3b8",
+                    opacity=0.7,
+                ),
+                row=1, col=1, secondary_y=False,
+            )
+            fig_sku.add_trace(
+                go.Bar(
+                    x=sku_rows["周期"],
+                    y=sku_rows["总销售额"],
+                    name="总销售额 ($)",
+                    marker_color="#3b82f6",
+                    opacity=0.85,
+                ),
+                row=1, col=1, secondary_y=False,
+            )
+            fig_sku.add_trace(
+                go.Scatter(
+                    x=sku_rows["周期"],
+                    y=sku_rows["ROAS"],
+                    name="ROAS",
+                    mode="lines+markers",
+                    line=dict(color="#10b981", width=3),
+                    marker=dict(size=7),
+                ),
+                row=1, col=1, secondary_y=True,
+            )
+            ref_r = round(1.0 / target_acos, 2)
+            fig_sku.add_hline(
+                y=ref_r,
+                line_dash="dot",
+                line_color="#ef4444",
+                annotation_text=f"保本 ROAS ({ref_r}x)",
+                annotation_position="bottom right",
+                row=1, col=1, secondary_y=True,
+            )
+
+            # Row 2: 订单量柱状图 + CPC / CVR 折线
+            fig_sku.add_trace(
+                go.Bar(
+                    x=sku_rows["周期"],
+                    y=sku_rows["广告订单"],
+                    name="订单量",
+                    marker_color="#fbbf24",
+                    opacity=0.8,
+                ),
+                row=2, col=1, secondary_y=False,
+            )
+            fig_sku.add_trace(
+                go.Scatter(
+                    x=sku_rows["周期"],
+                    y=sku_rows["CPC"],
+                    name="CPC 点击成本 ($)",
+                    mode="lines+markers",
+                    line=dict(color="#ec4899", width=2),
+                ),
+                row=2, col=1, secondary_y=True,
+            )
+            fig_sku.add_trace(
+                go.Scatter(
+                    x=sku_rows["周期"],
+                    y=sku_rows["CVR"] * 100,
+                    name="CVR 转化率 (%)",
+                    mode="lines+markers",
+                    line=dict(color="#8b5cf6", width=2, dash="dash"),
+                ),
+                row=2, col=1, secondary_y=True,
+            )
+
+            fig_sku.update_layout(
+                height=520,
+                barmode="group",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(l=40, r=40, t=45, b=30),
+            )
+            fig_sku.update_yaxes(title_text="金额 ($)", row=1, col=1, secondary_y=False)
+            fig_sku.update_yaxes(title_text="ROAS", row=1, col=1, secondary_y=True)
+            fig_sku.update_yaxes(title_text="订单数", row=2, col=1, secondary_y=False)
+            fig_sku.update_yaxes(title_text="比率 (%) / CPC ($)", row=2, col=1, secondary_y=True)
+
+            st.plotly_chart(fig_sku, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+
+        # 5. 全量 SKU 周期汇总明细表
+        st.markdown("#### 📋 全量 SKU 周期趋势指标与诊断建议总表")
+
+        f_col1, f_col2 = st.columns([3, 1])
+        with f_col1:
+            status_options = ["全部 SKU", "🚨 仅看失血/恶化预警款", "🚀 仅看强势放量爆款", "📉 仅看低效消耗款", "平稳运行"]
+            chosen_status_idx = status_options.index(st.session_state["trend_filter_choice"]) if st.session_state["trend_filter_choice"] in status_options else 0
+            chosen_status = st.selectbox("按趋势状态筛选：", status_options, index=chosen_status_idx)
+            st.session_state["trend_filter_choice"] = chosen_status
+        with f_col2:
+            csv_trend_sum = sku_summary_df.to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                label=f"📥 导出趋势汇总 CSV ({len(sku_summary_df)}款)",
+                data=csv_trend_sum,
+                file_name="walmart_sku_trend_analysis_summary.csv",
+                mime="text/csv",
+            )
+
+        filter_df = sku_summary_df.copy()
+        if chosen_status == "🚨 仅看失血/恶化预警款":
+            filter_df = filter_df[filter_df["趋势分类"] == "异常变差"]
+        elif chosen_status == "🚀 仅看强势放量爆款":
+            filter_df = filter_df[filter_df["趋势分类"] == "变好向好"]
+        elif chosen_status == "📉 仅看低效消耗款":
+            filter_df = filter_df[filter_df["趋势状态"].str.contains("低效", na=False)]
+        elif chosen_status == "平稳运行":
+            filter_df = filter_df[filter_df["趋势分类"] == "平稳"]
+
+        st.dataframe(
+            filter_df[[
+                "SKU展示", "趋势状态", "总花费", "总销售额", "总订单", "整体ROAS",
+                "近期花费", "近期订单", "近期ROAS", "花费环比%", "订单环比%", "建议预警动作"
+            ]],
+            column_config={
+                "SKU展示": st.column_config.TextColumn("SKU (Item ID)", width="medium"),
+                "趋势状态": st.column_config.TextColumn("走势标签", width="small"),
+                "总花费": st.column_config.NumberColumn("总花费 ($)", format="$%.2f"),
+                "总销售额": st.column_config.NumberColumn("总销售额 ($)", format="$%.2f"),
+                "总订单": st.column_config.NumberColumn("总订单", format="%d"),
+                "整体ROAS": st.column_config.NumberColumn("整体 ROAS", format="%.2f"),
+                "近期花费": st.column_config.NumberColumn("近期花费 ($)", format="$%.2f"),
+                "近期订单": st.column_config.NumberColumn("近期订单", format="%d"),
+                "近期ROAS": st.column_config.NumberColumn("近期 ROAS", format="%.2f"),
+                "花费环比%": st.column_config.NumberColumn("花费环比%", format="%.1f%%"),
+                "订单环比%": st.column_config.NumberColumn("订单环比%", format="%.1f%%"),
+                "建议预警动作": st.column_config.TextColumn("运营预警指令", width="large"),
+            },
+            use_container_width=True,
+            hide_index=True,
+        )
+
+# =========================================================================
+# TAB 2: 🎯 综合决策与总动作清单
+# =========================================================================
+with tabs[1]:
+    st.markdown("### 🎯 综合决策大盘与跨板块落地总动作清单")
+    st.caption("聚合各板块已上传数据，自动提炼大盘宏观指标、管理层内参摘要与 P0/P1 执行清单。")
+
+    # 聚合当前已有表格
+    active_tables = {k: st.session_state["section_data"].get(k) for k in [
+        "campaign", "search_term", "keyword", "ad_item", "platform", "page_type"
+    ]}
+
+    # 如果商品广告列表为空，检查多期走势表是否有明细可以复用
+    if active_tables.get("ad_item") is None and st.session_state["section_data"].get("trend") is not None:
+        active_tables["ad_item"] = st.session_state["section_data"]["trend"]["period_df"]
+
+    has_any = any(v is not None and not v.empty for v in active_tables.values())
+
+    if not has_any:
+        st.info("💡 当前暂无任何广告业务数据。请先在其它专属业务板块上传对应表格（如在「📈 SKU多期趋势看板」上传 10.3--11.1 报表）。")
+    else:
+        overview = summarize_overview(active_tables)
+        action_df, exec_summary, action_stats = build_action_items(active_tables, days=analysis_days)
+
+        spend_str = fmt_money(overview.get("大盘总花费"))
+        sales_str = fmt_money(overview.get("总销售额"))
+        roas_str = fmt_roas(overview.get("整体ROAS"))
+        orders_str = fmt_num(overview.get("总订单"))
+        aov_str = fmt_money(overview.get("AOV"))
+        ctr_str = fmt_pct(overview.get("整体CTR"))
+        cpc_str = fmt_money(overview.get("CPC"))
+        cvr_str = fmt_pct(overview.get("CVR"))
+        cpa_str = fmt_money(overview.get("CPA"))
+        nb_str = fmt_pct(overview.get("新客占比"))
+
+        st.markdown(
+            f"""
+            <div class="kpi-grid">
+                <div class="kpi-card"><div class="kpi-label">大盘总花费</div><div class="kpi-value">{spend_str}</div></div>
+                <div class="kpi-card"><div class="kpi-label">广告总销售额</div><div class="kpi-value">{sales_str}</div></div>
+                <div class="kpi-card"><div class="kpi-label">整体 ROAS</div><div class="kpi-value">{roas_str}</div></div>
+                <div class="kpi-card"><div class="kpi-label">总订单数</div><div class="kpi-value">{orders_str}</div></div>
+                <div class="kpi-card"><div class="kpi-label">客单价 (AOV)</div><div class="kpi-value">{aov_str}</div></div>
+                <div class="kpi-card"><div class="kpi-label">整体点击率 (CTR)</div><div class="kpi-value">{ctr_str}</div></div>
+                <div class="kpi-card"><div class="kpi-label">平均点击成本 (CPC)</div><div class="kpi-value">{cpc_str}</div></div>
+                <div class="kpi-card"><div class="kpi-label">订单转化率 (CVR)</div><div class="kpi-value">{cvr_str}</div></div>
+                <div class="kpi-card"><div class="kpi-label">获客成本 (CPA)</div><div class="kpi-value">{cpa_str}</div></div>
+                <div class="kpi-card"><div class="kpi-label">新客订单占比</div><div class="kpi-value">{nb_str}</div></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        cut_item = exec_summary[2].replace("3. 最该砍的 3 项 (P0 止血重点)：", "") if len(exec_summary) > 2 else "暂无严重浪费"
+        up_item = exec_summary[3].replace("4. 最该加的 3 项 (P1 扩量增长)：", "") if len(exec_summary) > 3 else "维持达标投放"
+
+        st.markdown(
+            f"""
+            <div class="summary-card">
+                <div style="font-weight: 600; font-size: 15.5px; color: #0f172a; margin-bottom: 8px;">
+                    📋 跨板块运营决策内参摘要
+                </div>
+                <div class="summary-item"><span class="summary-badge badge-blue">大盘表现</span> 广告总花费 <strong>{spend_str}</strong>，整体投产 <strong>{roas_str}</strong>。</div>
+                <div class="summary-item"><span class="summary-badge badge-red">紧急止血</span> 识别高损项 <strong>{action_stats.get('total_neg_count', 0)}</strong> 个，止损空间约 <strong>${action_stats.get('total_neg_spend', 0.0):,.2f}</strong>。</div>
+                <div class="summary-item"><span class="summary-badge badge-red">P0 优先砍</span> {cut_item}</div>
+                <div class="summary-item"><span class="summary-badge badge-green">P1 优先扩</span> {up_item}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # 动作清单
+        st.markdown("#### 📋 待落地落地执行总动作清单")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.metric("P0 紧急必做", f"{action_stats.get('p0_count', 0)} 项")
+        with c2:
+            st.metric("P1 本周优化", f"{action_stats.get('p1_count', 0)} 项")
+        with c3:
+            st.metric("P2 观察建议", f"{action_stats.get('p2_count', 0)} 项")
+        with c4:
+            st.metric("总执行动作", f"{action_stats.get('total_actions', 0)} 项")
+
+        if not action_df.empty:
+            f_col1, f_col2 = st.columns([3, 1])
+            with f_col1:
+                p_filter = st.multiselect("筛选优先级：", ["P0", "P1", "P2"], default=["P0", "P1", "P2"])
+            with f_col2:
+                csv_act = action_df.to_csv(index=False).encode("utf-8-sig")
+                st.download_button(
+                    label=f"📥 导出清单 CSV ({len(action_df)}条)",
+                    data=csv_act,
+                    file_name="walmart_action_plan.csv",
+                    mime="text/csv",
+                )
+
+            v_act_df = action_df.copy()
+            if p_filter:
+                v_act_df = v_act_df[v_act_df["优先级"].isin(p_filter)]
+
+            st.dataframe(
+                v_act_df,
+                column_config={
+                    "优先级": st.column_config.TextColumn("优先级", width="small"),
+                    "动作类型": st.column_config.TextColumn("类型", width="small"),
+                    "操作对象": st.column_config.TextColumn("操作对象", width="medium"),
+                    "现状数字": st.column_config.TextColumn("现状数字", width="medium"),
+                    "具体操作描述": st.column_config.TextColumn("具体操作说明", width="large"),
+                },
+                use_container_width=True,
+                hide_index=True,
+            )
+
+# =========================================================================
+# TAB 3: ① 广告活动诊断板块
+# =========================================================================
+with tabs[2]:
+    st.markdown("### ① 广告活动健康度诊断")
+    f_camp = render_section_uploader(
+        sec_key="campaign",
+        title="广告活动诊断",
+        default_name="广告活动报表",
+        help_text="请上传领星导出的【广告活动列表报表】（文件名含'广告活动'或'campaign'），支持 .xlsx / .csv。",
+    )
+    if f_camp:
+        try:
+            with st.spinner("正在解析广告活动报表..."):
+                t_type, df, _ = parse_single_file_cached(f_camp.name, f_camp.getvalue(), "campaign")
+                if df is not None:
+                    update_section("campaign", df, f_camp.name, f_camp.getvalue())
+                    st.rerun()
+        except Exception as e:
+            st.error(f"解析失败: {e}")
+
+    camp_df = st.session_state["section_data"].get("campaign")
+    if camp_df is not None and not camp_df.empty:
+        try:
+            live_df, inactive_info, budget_notice = analyze_campaign_health(camp_df, days=analysis_days)
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.metric("有效在投活动 (Live)", f"{len(live_df)} 个")
+            with c2:
+                st.metric("在投总花费", fmt_money(live_df["花费"].sum() if "花费" in live_df.columns else 0.0))
+            with c3:
+                st.metric("已暂停活动", f"{inactive_info.get('count', 0)} 条", f"历史花费 {fmt_money(inactive_info.get('total_spend', 0))}")
+            with c4:
+                st.metric("暂停活动ROAS", fmt_roas(inactive_info.get("avg_roas")))
+
+            f1, f2 = st.columns([3, 1])
+            with f1:
+                tag_sel = st.multiselect("按标签筛选：", ALL_CAMPAIGN_TAGS, default=[])
+            with f2:
+                csv_c = live_df.to_csv(index=False).encode("utf-8-sig")
+                st.download_button("📥 导出活动诊断 CSV", csv_c, "campaign_health.csv", "text/csv")
+
+            v_live = live_df.copy()
+            if tag_sel and "全部" not in tag_sel:
+                v_live = v_live[v_live["标签"].apply(lambda ts: any(t in str(ts) for t in tag_sel))]
+
+            st.dataframe(
+                v_live,
+                column_config={
+                    "活动名": st.column_config.TextColumn("活动名称", width="medium"),
+                    "花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
+                    "订单": st.column_config.NumberColumn("订单", format="%d"),
+                    "销售额": st.column_config.NumberColumn("销售额 ($)", format="$%.2f"),
+                    "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
+                    "标签": st.column_config.TextColumn("诊断标签", width="medium"),
+                    "每日预算": st.column_config.NumberColumn("每日预算 ($)", format="$%.2f"),
+                },
+                use_container_width=True,
+                hide_index=True,
+            )
+        except Exception as e:
+            st.error(f"计算异常: {e}")
+
+# =========================================================================
+# TAB 4: ② 搜索词否词/挖词板块
+# =========================================================================
+with tabs[3]:
+    st.markdown("### ② 搜索词否词挖掘与精准词迁移")
+    f_st = render_section_uploader(
+        sec_key="search_term",
+        title="搜索词否词/挖词",
+        default_name="搜索词报表",
+        help_text="请上传领星导出的【搜索词报表】（文件名含'搜索词'或'search_term'），支持 .xlsx / .csv。",
+    )
+    if f_st:
+        try:
+            with st.spinner("正在挖掘搜索词..."):
+                t_type, df, _ = parse_single_file_cached(f_st.name, f_st.getvalue(), "search_term")
+                if df is not None:
+                    update_section("search_term", df, f_st.name, f_st.getvalue())
+                    st.rerun()
+        except Exception as e:
+            st.error(f"解析失败: {e}")
+
+    st_df = st.session_state["section_data"].get("search_term")
+    if st_df is not None and not st_df.empty:
+        try:
+            neg_df, mining_df, hc_df, st_stats = mine_search_terms(st_df)
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.metric("🚨 P0 紧急否词", f"{st_stats['p0_count']} 个", f"止损 ${st_stats['p0_spend']:,.2f}")
+            with c2:
+                st.metric("📉 P1 低产出否词", f"{st_stats['p1_count']} 个", f"止损 ${st_stats['p1_spend']:,.2f}")
+            with c3:
+                st.metric("💎 可挖掘出单词", f"{st_stats['mining_count']} 个", f"销售额 ${st_stats['mining_sales']:,.2f}")
+            with c4:
+                st.metric("⚠️ 高点击零转化词", f"{st_stats['high_clicks_count']} 个")
+
+            list_choice = st.radio("查看清单：", ["清单 A：否词清单", "清单 B：挖词清单", "清单 C：高点击零转化"], horizontal=True)
+            if "清单 A" in list_choice:
+                st.dataframe(neg_df, use_container_width=True, hide_index=True)
+            elif "清单 B" in list_choice:
+                st.dataframe(mining_df, use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(hc_df, use_container_width=True, hide_index=True)
+        except Exception as e:
+            st.error(f"计算异常: {e}")
+
+# =========================================================================
+# TAB 5: ③ 关键词调价板块
+# =========================================================================
+with tabs[4]:
+    st.markdown("### ③ 关键词出价与状态调整")
+    f_kw = render_section_uploader(
+        sec_key="keyword",
+        title="关键词调价",
+        default_name="关键词报表",
+        help_text="请上传领星导出的【关键词报表】（文件名含'关键词'或'keyword'），支持 .xlsx / .csv。",
+    )
+    if f_kw:
+        try:
+            with st.spinner("正在分析关键词竞价策略..."):
+                t_type, df, _ = parse_single_file_cached(f_kw.name, f_kw.getvalue(), "keyword")
+                if df is not None:
+                    update_section("keyword", df, f_kw.name, f_kw.getvalue())
+                    st.rerun()
+        except Exception as e:
+            st.error(f"解析失败: {e}")
+
+    kw_df = st.session_state["section_data"].get("keyword")
+    if kw_df is not None and not kw_df.empty:
+        try:
+            kw_res, all_kw, kw_stats = analyze_keyword_bids(kw_df)
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.metric("🚨 该暂停关键词", f"{kw_stats['pause_count']} 个", f"止损 ${kw_stats['pause_spend']:,.2f}")
+            with c2:
+                st.metric("📉 该降价关键词", f"{kw_stats['bid_down_count']} 个")
+            with c3:
+                st.metric("📈 该加价优质词", f"{kw_stats['bid_up_count']} 个")
+            with c4:
+                st.metric("🔄 误暂停潜力词", f"{kw_stats['unpause_count']} 个")
+
+            st.dataframe(all_kw, use_container_width=True, hide_index=True)
+        except Exception as e:
+            st.error(f"计算异常: {e}")
+
+# =========================================================================
+# TAB 6: ④ 商品位诊断板块
+# =========================================================================
+with tabs[5]:
+    st.markdown("### ④ 广告商品位诊断与单品生命周期矩阵")
+    f_ad = render_section_uploader(
+        sec_key="ad_item",
+        title="商品位诊断",
+        default_name="商品广告列表报表",
+        help_text="请上传领星导出的【广告列表报表】（文件名含'广告列表'或'item'），支持 .xlsx / .csv。",
+    )
+    if f_ad:
+        try:
+            with st.spinner("正在解析商品广告位数据..."):
+                t_type, df, _ = parse_single_file_cached(f_ad.name, f_ad.getvalue(), "ad_item")
+                if df is not None:
+                    update_section("ad_item", df, f_ad.name, f_ad.getvalue())
+                    st.rerun()
+        except Exception as e:
+            st.error(f"解析失败: {e}")
+
+    ad_df = st.session_state["section_data"].get("ad_item")
+    if ad_df is not None and not ad_df.empty:
+        try:
+            ad_res = diagnose_ad_items(ad_df)
+            ad_stats = ad_res["stats"]
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.metric("TOP10 销售额贡献", fmt_money(ad_stats.get('top10_sales', 0)))
+            with c2:
+                st.metric("🔥 烧钱商品位", f"{ad_stats.get('burning_count', 0)} 个", f"沉没 {fmt_money(ad_stats.get('burning_spend', 0))}")
+            with c3:
+                st.metric("📉 竞价偏低商品", f"{ad_stats.get('low_bid_count', 0)} 个")
+            with c4:
+                st.metric("⚠️ 状态异常商品", f"{ad_stats.get('abnormal_count', 0)} 个")
+
+            st.markdown("#### 🏆 跑量商品 TOP 10")
+            st.dataframe(ad_res["top10_items"], use_container_width=True, hide_index=True)
+
+            if not ad_res["burning_items"].empty:
+                st.markdown("#### 🔥 烧钱零转化商品（花费 ≥ $30 且 0 单）")
+                st.dataframe(ad_res["burning_items"], use_container_width=True, hide_index=True)
+        except Exception as e:
+            st.error(f"计算异常: {e}")
+
+# =========================================================================
+# TAB 7: ⑤ 平台与页面位置板块
+# =========================================================================
+with tabs[6]:
+    st.markdown("### ⑤ 平台端与页面位置流量结构表现")
+    p_col1, p_col2 = st.columns(2)
+    with p_col1:
+        f_p1 = render_section_uploader("platform", "平台报表", "平台报表", "上传包含 App / Mobile / Desktop 的平台报表")
+        if f_p1:
+            _, df, _ = parse_single_file_cached(f_p1.name, f_p1.getvalue(), "platform")
+            if df is not None:
+                update_section("platform", df, f_p1.name, f_p1.getvalue())
+                st.rerun()
+    with p_col2:
+        f_p2 = render_section_uploader("page_type", "页面类型报表", "页面类型报表", "上传包含 Search / Item / Browse 的页面类型报表")
+        if f_p2:
+            _, df, _ = parse_single_file_cached(f_p2.name, f_p2.getvalue(), "page_type")
+            if df is not None:
+                update_section("page_type", df, f_p2.name, f_p2.getvalue())
+                st.rerun()
+
+    plat_df = st.session_state["section_data"].get("platform")
+    page_df = st.session_state["section_data"].get("page_type")
+    if plat_df is not None or page_df is not None:
+        try:
+            plc_res = analyze_placements(plat_df, page_df)
+            if not plc_res["platform_df"].empty:
+                st.markdown("#### 📱 平台端流量结构")
+                st.dataframe(plc_res["platform_df"], use_container_width=True, hide_index=True)
+            if not plc_res["page_type_df"].empty:
+                st.markdown("#### 📑 页面类型位置表现")
+                st.dataframe(plc_res["page_type_df"], use_container_width=True, hide_index=True)
+        except Exception as e:
+            st.error(f"计算异常: {e}")
