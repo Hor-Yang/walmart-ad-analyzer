@@ -104,7 +104,8 @@ def parse_date_series(series: pd.Series) -> pd.Series:
 def build_sku_trend_data(
     ad_item_records: Any,
     sku_map: Optional[Dict[str, str]] = None,
-    target_acos: float = 0.25,
+    target_acos: float = 0.20,
+    breakeven_acos: float = 0.35,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, List[Dict[str, Any]], pd.DataFrame]:
     """
     处理多周期/每日广告列表数据：
@@ -112,10 +113,6 @@ def build_sku_trend_data(
         ad_item_records: [{"period": "2026-10-01", "df": df, "filename": "..."}, ...] 或单张 DataFrame
     输出:
         (period_df, sku_summary_df, anomalies, daily_macro_df)
-        - period_df: 每个 SKU 在每个周期的汇总指标明细
-        - sku_summary_df: 每个 SKU 的整体汇总、近期走势、环比、趋势评级与建议
-        - anomalies: 识别出的异常变差与变好向好预警清单
-        - daily_macro_df: 全店每日/每期大盘汇总（花费、销售、订单、ROAS）
     """
     if isinstance(ad_item_records, pd.DataFrame):
         if ad_item_records.empty:
@@ -235,18 +232,21 @@ def build_sku_trend_data(
     daily_macro["CVR"] = safe_divide(daily_macro["广告订单"], daily_macro["点击"])
 
     # 深度评估 SKU 趋势与生成预警建议
-    sku_summary, anomalies = _evaluate_sku_trends_advanced(agg_df, target_acos=target_acos)
+    sku_summary, anomalies = _evaluate_sku_trends_advanced(
+        agg_df, target_acos=target_acos, breakeven_acos=breakeven_acos
+    )
 
     return agg_df, sku_summary, anomalies, daily_macro
 
 def _evaluate_sku_trends_advanced(
     period_df: pd.DataFrame,
-    target_acos: float = 0.25,
+    target_acos: float = 0.20,
+    breakeven_acos: float = 0.35,
 ) -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
     """
     高级多期趋势评估引擎：
     - 支持多日（如30天）时间序列分段窗口分析（最新 7 天 vs 前 7 天）
-    - 结合保本 ROAS、消耗弹性、转化衰减多维输出预警与落地建议
+    - 结合保本线与目标线双线解耦，多维输出预警与落地建议
     """
     if period_df.empty:
         return pd.DataFrame(), []
@@ -254,7 +254,9 @@ def _evaluate_sku_trends_advanced(
     summary_rows = []
     anomalies = []
 
-    ref_roas = round(1.0 / target_acos, 2) if target_acos > 0 else 4.0
+    target_roas = round(1.0 / target_acos, 2) if target_acos > 0 else 5.0
+    breakeven_roas = round(1.0 / breakeven_acos, 2) if breakeven_acos > 0 else 2.86
+    ref_roas = target_roas
 
     for sku, grp in period_df.groupby("SKU"):
         grp = grp.sort_values(by="周期").reset_index(drop=True)
@@ -276,17 +278,37 @@ def _evaluate_sku_trends_advanced(
         latest_orders = int(latest_row["广告订单"])
         latest_roas = float(latest_row["ROAS"]) if pd.notna(latest_row["ROAS"]) else 0.0
 
-        # 分段窗口计算（多天数据分析，如 7天环比）
-        if n_periods >= 14:
-            recent_grp = grp.iloc[-7:]
-            prev_grp = grp.iloc[-14:-7]
-        elif n_periods >= 4:
-            half = n_periods // 2
-            recent_grp = grp.iloc[-half:]
-            prev_grp = grp.iloc[:half]
+        # 核心修正：严格基于【自然日】时间窗口计算环比（修正按行数 iloc[-7:] 切片的错误）
+        grp_dt = pd.to_datetime(grp["周期"], errors="coerce")
+        has_real_dates = grp_dt.notna().sum() >= max(2, int(len(grp) * 0.5))
+
+        if has_real_dates:
+            max_d = grp_dt.dropna().max()
+            # 近 7 个自然日与前 7 个自然日
+            recent_mask = (grp_dt >= max_d - pd.Timedelta(days=6)) & (grp_dt <= max_d)
+            prev_mask = (grp_dt >= max_d - pd.Timedelta(days=13)) & (grp_dt < max_d - pd.Timedelta(days=6))
+
+            recent_grp = grp[recent_mask]
+            prev_grp = grp[prev_mask]
+
+            # 边界容错：若近自然日无记录（如断层），平滑回退
+            if recent_grp.empty:
+                recent_grp = grp.iloc[-1:]
+            if prev_grp.empty:
+                prev_sub = grp[~recent_mask]
+                prev_grp = prev_sub if not prev_sub.empty else recent_grp
         else:
-            recent_grp = grp.iloc[-1:]
-            prev_grp = grp.iloc[:-1] if n_periods > 1 else grp.iloc[-1:]
+            # 非标准自然日格式（如批次名称），退化为序列分块保底
+            if n_periods >= 14:
+                recent_grp = grp.iloc[-7:]
+                prev_grp = grp.iloc[-14:-7]
+            elif n_periods >= 4:
+                half = n_periods // 2
+                recent_grp = grp.iloc[-half:]
+                prev_grp = grp.iloc[:half]
+            else:
+                recent_grp = grp.iloc[-1:]
+                prev_grp = grp.iloc[:-1] if n_periods > 1 else grp.iloc[-1:]
 
         recent_spend = float(recent_grp["广告花费"].sum())
         recent_sales = float(recent_grp["总销售额"].sum())
@@ -347,12 +369,17 @@ def _evaluate_sku_trends_advanced(
             core_issue = f"近期 ROAS 达到 {recent_roas:.2f}，显著高于保本线 ({ref_roas:.2f}x)"
             action_advice = "【保持优势】产出高效稳健，建议维持充沛预算供给，拓展同类关联品广告位以扩大战果。"
 
-        # 4. 低效消耗款
-        elif total_spend >= 20.0 and (overall_roas or 0) < ref_roas:
-            trend_status = "📉 低效微利消耗"
+        # 4. 低效消耗款（解耦保本线与目标线）
+        elif total_spend >= 20.0 and (overall_roas or 0) < breakeven_roas:
+            trend_status = "📉 击穿保本线亏损"
+            trend_category = "异常变差"
+            core_issue = f"整体 ROAS 仅 {overall_roas:.2f} (低于保本线 {breakeven_roas:.2f}x)，净亏损侵蚀毛利"
+            action_advice = f"【保本止损】实际投产低于保本线 (保本 ACoS {breakeven_acos*100:.0f}%)，建议在关键词层级下调竞价 20% 并排查高损大词。"
+        elif total_spend >= 20.0 and (overall_roas or 0) < target_roas:
+            trend_status = "📉 保本微利未达标"
             trend_category = "观察优化"
-            core_issue = f"整体 ROAS 仅 {overall_roas:.2f}，微亏或轻微侵蚀毛利"
-            action_advice = "【精细优化】建议竞价下调 15%，剔除点击无转化的低效词，优化商品关联承接。"
+            core_issue = f"整体 ROAS {overall_roas:.2f} 高于保本线，但未达到预期盈利目标 ({target_roas:.2f}x)"
+            action_advice = "【精细提效】虽未亏损但利润垫较薄，建议通过精准否词与竞价微调 10% 提升纯利空间。"
 
         # 5. 长尾款
         elif total_spend < 10.0:

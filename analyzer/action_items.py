@@ -112,23 +112,25 @@ def build_action_items(
 
         # P1 关键词该降价
         for _, r in kw_dict["bid_down"].iterrows():
+            suggest_adj = r.get("建议出价调整", r.get("建议竞价", "建议下调20%"))
             actions.append({
                 "优先级": "P1",
                 "动作类型": "降价",
                 "操作对象": f"关键词: {r['关键词']} ({r['所在活动']})",
                 "现状数字": r["依据数字"],
-                "具体操作描述": f"产出低效，建议竞价下调 20% 至 {r['建议竞价']}",
+                "具体操作描述": f"产出低效，{suggest_adj}",
                 "_waste_amount": 10.0,
             })
 
         # P1 关键词该加价
         for _, r in kw_dict["bid_up"].iterrows():
+            suggest_adj = r.get("建议出价调整", r.get("建议竞价", "建议上调15%"))
             actions.append({
                 "优先级": "P1",
                 "动作类型": "加价",
                 "操作对象": f"关键词: {r['关键词']} ({r['所在活动']})",
                 "现状数字": r["依据数字"],
-                "具体操作描述": f"产出优异 (ROAS>4)，建议竞价上调 15% 至 {r['建议竞价']} 抢占更多曝光",
+                "具体操作描述": f"产出优异 (ROAS>4)，{suggest_adj} 抢占更多曝光",
                 "_waste_amount": 15.0,
             })
 

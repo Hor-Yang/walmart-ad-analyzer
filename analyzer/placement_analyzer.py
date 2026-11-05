@@ -72,15 +72,21 @@ def analyze_placements(
         plat_agg["CVR"] = safe_divide(plat_agg["订单"], plat_agg["点击"])
         plat_agg["CTR"] = safe_divide(plat_agg["点击"], plat_agg["曝光"])
 
-        # 诊断与建议
+        # 诊断与建议（引入最低样本量保护机制：点击 >= 20 或 花费 >= $15）
         plat_actions = []
         plat_insights = []
         for _, r in plat_agg.iterrows():
             p_name = r["平台"]
             r_val = r["ROAS"]
             spend_pct = r["花费占比"] * 100
+            clicks_val = int(r["点击"])
+            spend_val = float(r["花费"])
 
-            if r_val is not None and not pd.isna(r_val):
+            # 最低样本量保护
+            if clicks_val < 20 and spend_val < 15.0:
+                action = f"数据样本量不足（点击 {clicks_val} 次，花费 ${spend_val:.2f}），建议继续积累观测，暂不调整位置溢价"
+                plat_insights.append(f"ℹ️ **{p_name.upper()} 端样本量较小**：累计点击 {clicks_val} 次，建议持续监测。")
+            elif r_val is not None and not pd.isna(r_val):
                 if r_val < m_roas * 0.60:
                     action = f"ROAS ({r_val:.2f}) 显著低于大盘60%（基准 {m_roas*0.60:.2f}），建议对该端下调出价 15%~25%"
                     plat_insights.append(f"🔴 **{p_name.upper()} 端表现欠佳**：花费占比 {spend_pct:.1f}%，ROAS 仅为 {r_val:.2f}，建议下调出价。")
@@ -153,14 +159,19 @@ def analyze_placements(
             spend_pct = r["花费占比"]
             r_val = r["ROAS"]
             orders = r["订单"]
+            clicks_v = int(r["点击"])
+            spend_v = float(r["花费"])
 
-            # 花费占比高 (>= 5%) 且 ROAS 低于大盘一半
-            if spend_pct >= 0.05 and (r_val is None or r_val < m_roas * 0.50):
+            # 引入最低样本量保护机制
+            if clicks_v < 20 and spend_v < 15.0:
+                action = f"数据样本量不足（点击 {clicks_v} 次，花费 ${spend_v:.2f}），建议保持观察，暂不调整页面溢价"
+                page_insights.append(f"ℹ️ **{name} 位置样本量较小**：累计点击 {clicks_v} 次，建议累积更多数据后再做结构性调整。")
+            elif spend_pct >= 0.05 and (r_val is None or r_val < m_roas * 0.50):
                 action = f"⚠️ 花费占比高（{spend_pct*100:.1f}%）但 ROAS 低于大盘一半（{m_roas*0.50:.2f}），建议下调溢价或裁剪该位置流量"
                 page_insights.append(f"⚠️ **{name} 位置产出偏低**：花费占比 {spend_pct*100:.1f}%，ROAS 仅为 {r_val if r_val else 0:.2f}，低于大盘一半，需注意控成本。")
-            elif orders == 0 and r["花费"] >= 20.0:
-                action = f"🚨 零转化低效位（累计花费 ${r['花费']:.2f}），建议大幅降低竞价或排除该位置"
-                page_insights.append(f"🚨 **{name} 位置零转化**：花费 ${r['花费']:.2f} 且 0 订单，建议下调出价。")
+            elif orders == 0 and spend_v >= 20.0:
+                action = f"🚨 零转化低效位（累计花费 ${spend_v:.2f}），建议大幅降低竞价或排除该位置"
+                page_insights.append(f"🚨 **{name} 位置零转化**：花费 ${spend_v:.2f} 且 0 订单，建议下调出价。")
             elif r_val is not None and r_val >= m_roas:
                 action = f"优质展示位（ROAS {r_val:.2f}），建议保持或加大出价倾斜"
             else:

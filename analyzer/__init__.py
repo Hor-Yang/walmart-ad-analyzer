@@ -36,6 +36,12 @@ from .store_product_analysis import (
     generate_product_matrix_analysis,
     get_decision_mapping_guide,
 )
+from .sku_profit_model import (
+    generate_sku_cost_template,
+    load_sku_cost_table,
+    calculate_sku_profit_analytics,
+)
+from .decision_engine import AdDecisionEngine
 
 __all__ = [
     "agg_metrics",
@@ -54,4 +60,8 @@ __all__ = [
     "generate_store_overview_analysis",
     "generate_product_matrix_analysis",
     "get_decision_mapping_guide",
+    "generate_sku_cost_template",
+    "load_sku_cost_table",
+    "calculate_sku_profit_analytics",
+    "AdDecisionEngine",
 ]

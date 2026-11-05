@@ -1,43 +1,50 @@
 from typing import Any, Dict, List, Optional, Tuple
+import re
 import numpy as np
 import pandas as pd
 from .metrics import safe_divide
 
 def mine_search_terms(
     search_term_df: pd.DataFrame,
+    target_acos: float = 0.25,
+    aov_override: Optional[float] = None,
+    target_cpa_override: Optional[float] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
     """
-    搜索词深度挖掘模块（高性能优化版）：
-    输出三张清单：
-    1. 清单A：否词清单（P0 烧钱零转化、P1 低效产出）
-    2. 清单B：挖词清单（高转化优质词，建议迁入精准广告活动）
-    3. 清单C：高点击零转化词（流量不精准或 Listing 承接力问题）
-    4. 统计汇总数据 stats
+    搜索词深度挖掘模块（重构聚合与动态阈值版）：
+    1. 彻底废除单行判断逻辑，按【广告活动/广告组/搜索词】进行多维聚合分析；
+    2. 废除固定 $15 静态数字，改用基于客单价 (AOV)、目标 CPA 和大盘 CVR 的动态止损阈值；
+    3. 区分【否定精准】与【否定词组】：
+       - 否定词组（Negative Phrase）：跨多活动重复高损耗、自动/广泛组乱窜、或命中通用噪音词根。
+       - 否定精准（Negative Exact）：特定活动/组内特定长尾词无效损耗。
+    4. 挖词清单：验证出单且高 ROAS 的搜索词，建议提拔至精准广告组。
+    5. 高点击零转化词：全店或活动内累计高点击零转化词排查。
     """
+    empty_neg = pd.DataFrame(columns=[
+        "优先级", "搜索词", "来源广告活动", "来源广告组", "建议否定类型", "花费", "点击", "CTR", "订单", "总销售额", "ROAS", "建议动作"
+    ])
+    empty_mining = pd.DataFrame(columns=[
+        "搜索词", "来源广告活动", "来源广告组", "订单", "总销售额", "ROAS", "当前CPC", "出价建议", "建议动作"
+    ])
+    empty_hc = pd.DataFrame(columns=[
+        "搜索词", "来源广告活动", "花费", "点击", "CTR", "CPC", "订单", "诊断建议"
+    ])
+    empty_stats = {
+        "p0_count": 0, "p0_spend": 0.0,
+        "p1_count": 0, "p1_spend": 0.0,
+        "mining_count": 0, "mining_sales": 0.0,
+        "high_clicks_count": 0,
+        "summary_text": "未上传或搜索词数据为空",
+    }
+
     if search_term_df is None or search_term_df.empty:
-        empty_neg = pd.DataFrame(columns=[
-            "优先级", "搜索词", "来源广告活动", "花费", "点击", "CTR", "订单", "总销售额", "ROAS", "建议动作"
-        ])
-        empty_mining = pd.DataFrame(columns=[
-            "搜索词", "来源广告活动", "订单", "总销售额", "ROAS", "当前CPC", "出价建议", "建议动作"
-        ])
-        empty_hc = pd.DataFrame(columns=[
-            "搜索词", "来源广告活动", "花费", "点击", "CTR", "CPC", "订单", "诊断建议"
-        ])
-        stats = {
-            "p0_count": 0, "p0_spend": 0.0,
-            "p1_count": 0, "p1_spend": 0.0,
-            "mining_count": 0, "mining_sales": 0.0,
-            "high_clicks_count": 0,
-            "summary_text": "未上传或搜索词数据为空",
-        }
-        return empty_neg, empty_mining, empty_hc, stats
+        return empty_neg, empty_mining, empty_hc, empty_stats
 
     df = search_term_df.copy()
 
-    # 规范中英文表头列名
+    # 1. 规范搜索词字段
     st_col = None
-    for cand in ["搜索词", "customer search term", "search term", "search_term", "query"]:
+    for cand in ["搜索词", "customer search term", "search term", "search_term", "query", "客户搜索词"]:
         for col in df.columns:
             if cand == str(col).strip().lower():
                 st_col = col
@@ -49,8 +56,9 @@ def mine_search_terms(
     elif "搜索词" not in df.columns:
         df["搜索词"] = [f"搜索词_{i+1}" for i in range(len(df))]
 
+    # 2. 规范广告活动字段
     camp_col = None
-    for cand in ["广告活动", "广告活动名称", "campaign name", "campaign", "活动名称"]:
+    for cand in ["广告活动", "广告活动名称", "campaign name", "campaign", "活动名称", "活动名"]:
         for col in df.columns:
             if cand == str(col).strip().lower():
                 camp_col = col
@@ -60,9 +68,23 @@ def mine_search_terms(
     if camp_col and camp_col != "广告活动":
         df = df.rename(columns={camp_col: "广告活动"})
     elif "广告活动" not in df.columns:
-        df["广告活动"] = "未关联活动"
+        df["广告活动"] = "通用广告活动"
 
-    # 基础数值校验与标准化
+    # 3. 规范广告组字段
+    ag_col = None
+    for cand in ["广告组", "广告组名称", "ad group", "ad_group", "adgroup", "ad group name"]:
+        for col in df.columns:
+            if cand == str(col).strip().lower():
+                ag_col = col
+                break
+        if ag_col:
+            break
+    if ag_col and ag_col != "广告组":
+        df = df.rename(columns={ag_col: "广告组"})
+    elif "广告组" not in df.columns:
+        df["广告组"] = "默认广告组"
+
+    # 4. 规范数值指标字段
     num_aliases = {
         "广告花费": ["广告花费", "花费", "spend", "cost", "ad spend"],
         "曝光量": ["曝光量", "曝光", "impressions", "impression"],
@@ -86,192 +108,247 @@ def mine_search_terms(
         else:
             df[target_col] = pd.to_numeric(df[target_col], errors="coerce").fillna(0.0)
 
-    # 规范搜索词与广告活动
+    # 基础文本规范化
     df["搜索词"] = df["搜索词"].astype(str).str.strip()
-    df["来源广告活动"] = df["广告活动"].astype(str).str.strip()
+    df["广告活动"] = df["广告活动"].astype(str).str.strip()
+    df["广告组"] = df["广告组"].astype(str).str.strip()
 
-    # 比率重算
-    df["CTR"] = safe_divide(df["点击"], df["曝光量"])
-    df["CPC"] = safe_divide(df["广告花费"], df["点击"])
-    df["CVR"] = safe_divide(df["广告订单"], df["点击"])
-    df["ROAS"] = safe_divide(df["总销售额"], df["广告花费"])
-
-    roas_val = df["ROAS"].apply(lambda x: 0.0 if x is None or pd.isna(x) else float(x))
+    # 过滤掉完全无效的空搜索词或系统占位符
+    df = df[~df["搜索词"].isin(["", "-", "nan", "None", "null"])].copy()
+    if df.empty:
+        return empty_neg, empty_mining, empty_hc, empty_stats
 
     # =========================================================================
-    # 清单 A：否词清单
-    # P0：花费 ≥ $15 且 订单 = 0
-    # P1：花费 ≥ $10 且 ROAS < 1.0 (排除已进 P0 的词)
+    # 核心重构：第一阶段聚合 - 按【广告活动, 广告组, 搜索词】汇总指标
+    # （废除单行判断，将同一活动组内分散在各天或各匹配项的同一搜索词合并）
     # =========================================================================
-    p0_mask = (df["广告花费"] >= 15.0) & (df["广告订单"] == 0)
-    p1_mask = (df["广告花费"] >= 10.0) & (roas_val < 1.0) & (~p0_mask)
+    group_cols = ["广告活动", "广告组", "搜索词"]
+    agg_df = df.groupby(group_cols, as_index=False).agg(
+        广告花费=("广告花费", "sum"),
+        曝光量=("曝光量", "sum"),
+        点击=("点击", "sum"),
+        广告订单=("广告订单", "sum"),
+        总销售额=("总销售额", "sum"),
+    )
 
-    p0_df = df[p0_mask].copy()
-    p0_df["优先级"] = "P0"
+    # 重算聚合后的关键指标
+    agg_df["CTR"] = safe_divide(agg_df["点击"], agg_df["曝光量"])
+    agg_df["CPC"] = safe_divide(agg_df["广告花费"], agg_df["点击"])
+    agg_df["CVR"] = safe_divide(agg_df["广告订单"], agg_df["点击"])
+    agg_df["ROAS"] = safe_divide(agg_df["总销售额"], agg_df["广告花费"])
 
-    p1_df = df[p1_mask].copy()
-    p1_df["优先级"] = "P1"
+    # =========================================================================
+    # 核心重构：第二阶段聚合 - 跨活动全局搜索词表现透视（纯向量化高速计算）
+    # =========================================================================
+    df["_is_broad_auto"] = df["广告活动"].astype(str).str.contains(r"auto|广泛|broad", case=False, regex=True)
+    global_term_agg = df.groupby("搜索词", as_index=True).agg(
+        全店总花费=("广告花费", "sum"),
+        全店总曝光=("曝光量", "sum"),
+        全店总点击=("点击", "sum"),
+        全店总订单=("广告订单", "sum"),
+        全店总销售=("总销售额", "sum"),
+        关联活动数=("广告活动", "nunique"),
+        包含自动或广泛=("_is_broad_auto", "any"),
+    ).to_dict("index")
 
-    neg_df = pd.concat([p0_df, p1_df], ignore_index=True)
+    # 定义典型纯损耗无效词根（一旦这些词根在搜索词中反复出现且零转化，优先建议词组否定）
+    STOP_STEMS = {
+        "free", "diy", "parts", "repair", "manual", "used", "cheap",
+        "how to", "wholesale", "rent", "ebay", "amazon", "youtube", "craigslist"
+    }
 
-    if not neg_df.empty:
-        # 高性能关联：仅针对进入否词候选集的词查询是否在多个广泛/Auto活动出现
-        cand_queries = set(neg_df["搜索词"].unique())
-        camp_lower = df["来源广告活动"].str.lower()
-        is_broad_auto = camp_lower.str.contains("auto") | df["来源广告活动"].str.contains("广泛")
-        matched_df = df[df["搜索词"].isin(cand_queries) & is_broad_auto]
-        broad_auto_counts = (
-            matched_df.groupby("搜索词")["来源广告活动"].nunique().to_dict()
-        )
+    # =========================================================================
+    # 动态阈值机制：依据客单价 (AOV)、目标 CPA 与大盘 CVR 动态推导止损阈值
+    # =========================================================================
+    tot_orders = float(df["广告订单"].sum())
+    tot_sales = float(df["总销售额"].sum())
+    tot_clicks = float(df["点击"].sum())
+    calc_aov = (tot_sales / tot_orders) if tot_orders > 0 else 50.0
+    effective_aov = aov_override if (aov_override and aov_override > 0) else calc_aov
+    overall_cvr = (tot_orders / tot_clicks) if tot_clicks > 0 else 0.05
+    effective_cpa = target_cpa_override if (target_cpa_override and target_cpa_override > 0) else (effective_aov * max(0.10, min(0.60, target_acos)))
 
-        def generate_neg_action(r: pd.Series) -> str:
-            q = r["搜索词"]
-            camp = r["来源广告活动"]
-            count = broad_auto_counts.get(q, 0)
-            if count > 1:
-                return f"建议在【{camp}】添加否定精准 '{q}'；该词在多个广泛/Auto活动反复出现，建议同时加否定词组"
+    # 动态止损线：受客单价保护，结合目标 CPA，保底 $10
+    dyn_neg_p0_spend = max(10.0, min(effective_aov * 0.60, effective_cpa * 1.5))
+    dyn_neg_p1_spend = dyn_neg_p0_spend * 0.65
+    dyn_min_clicks_p0 = max(12, int(1.2 / max(0.02, overall_cvr)))
+
+    # =========================================================================
+    # 清单 A：否词清单（动态阈值 + 样本量保护）
+    # P0：零转化且 (花费 ≥ 动态止损线 或 点击 ≥ 预期无转化点击线)
+    # P1：花费 ≥ P1动态线 且 ROAS < 1.0 (排除已进 P0 的词)
+    # =========================================================================
+    neg_rows = []
+    for _, r in agg_df.iterrows():
+        spend = float(r["广告花费"])
+        orders = float(r["广告订单"])
+        roas_v = float(r["ROAS"]) if r["ROAS"] is not None and not pd.isna(r["ROAS"]) else 0.0
+        q = r["搜索词"]
+        camp = r["广告活动"]
+        ag = r["广告组"]
+        clicks = int(r["点击"])
+        ctr_val = r["CTR"]
+        sales = float(r["总销售额"])
+
+        is_p0 = (orders == 0) and ((spend >= dyn_neg_p0_spend) or (clicks >= dyn_min_clicks_p0 and spend >= 8.0))
+        is_p1 = (spend >= dyn_neg_p1_spend) and (roas_v < 1.0) and not is_p0
+
+        if not (is_p0 or is_p1):
+            continue
+
+        priority = "P0" if is_p0 else "P1"
+        g_info = global_term_agg.get(q, {})
+        camp_count = g_info.get("关联活动数", 1)
+        has_broad_auto = g_info.get("包含自动或广泛", False)
+
+        # 检查是否包含通用噪音词根
+        q_lower = q.lower()
+        matched_stems = [st for st in STOP_STEMS if re.search(r"\b" + re.escape(st) + r"\b", q_lower)]
+
+        # 否定匹配类型决策机制：
+        # 1. 词组否定（Negative Phrase）：
+        #    - 命中噪音词根；或在 >=2 个活动中反复消耗且全店零转化；或在自动/广泛组中频繁窜词浪费
+        # 2. 精准否定（Negative Exact）：
+        #    - 单一活动内的具体长尾词浪费，精确否定该词本身，避免误伤同词根其他高转化变体
+        if matched_stems:
+            neg_type = "否定词组 (Negative Phrase)"
+            stem_str = "、".join(matched_stems)
+            action = f"检测到不相关噪音词根【{stem_str}】，建议在【{camp} - {ag}】添加否定词组 '{stem_str}'，阻止一切衍生无效点击"
+        elif camp_count >= 2 and g_info.get("全店总订单", 0) == 0 and (has_broad_auto or spend >= dyn_neg_p0_spend * 1.2):
+            neg_type = "否定词组 (Negative Phrase)"
+            action = f"该词跨 {camp_count} 个活动反复扩散消耗且全店0转化，建议在【{camp}】添加否定词组，并排查关联活动"
+        else:
+            neg_type = "否定精准 (Negative Exact)"
+            if is_p0:
+                action = f"累计消耗 ${spend:.2f} 零转化（触发动态止损线 ${dyn_neg_p0_spend:.2f}），建议在【{camp} - {ag}】添加否定精准 '{q}'，彻底封死单点失血"
             else:
-                return f"建议在【{camp}】添加否定精准 '{q}'"
+                action = f"投产严重过低 (ROAS {roas_v:.2f})，建议在【{camp} - {ag}】添加否定精准 '{q}' 控本"
 
-        def safe_rename(d: pd.DataFrame, ren: dict) -> pd.DataFrame:
-            res = d.copy()
-            for src, dst in ren.items():
-                if src in res.columns:
-                    if dst in res.columns and dst != src:
-                        res = res.drop(columns=[dst])
-                    res = res.rename(columns={src: dst})
-            return res
-
-        neg_df["建议动作"] = neg_df.apply(generate_neg_action, axis=1)
-        neg_df = safe_rename(neg_df, {
-            "广告花费": "花费",
-            "广告订单": "订单",
+        neg_rows.append({
+            "优先级": priority,
+            "搜索词": q,
+            "来源广告活动": camp,
+            "来源广告组": ag,
+            "建议否定类型": neg_type,
+            "花费": spend,
+            "点击": clicks,
+            "CTR": ctr_val,
+            "订单": int(orders),
+            "总销售额": sales,
+            "ROAS": roas_v,
+            "建议动作": action,
         })
-        # 排序：P0 在前，同一优先级按花费降序
+
+    if neg_rows:
+        neg_df = pd.DataFrame(neg_rows)
         neg_df["_sort_p"] = neg_df["优先级"].map({"P0": 0, "P1": 1})
-        neg_df = neg_df.sort_values(["_sort_p", "花费"], ascending=[True, False]).drop(columns=["_sort_p"])
-        neg_cols = ["优先级", "搜索词", "来源广告活动", "花费", "点击", "CTR", "订单", "总销售额", "ROAS", "建议动作"]
-        neg_df = neg_df[neg_cols].reset_index(drop=True)
+        neg_df = neg_df.sort_values(["_sort_p", "花费"], ascending=[True, False]).drop(columns=["_sort_p"]).reset_index(drop=True)
     else:
-        neg_df = pd.DataFrame(columns=[
-            "优先级", "搜索词", "来源广告活动", "花费", "点击", "CTR", "订单", "总销售额", "ROAS", "建议动作"
-        ])
+        neg_df = empty_neg
 
     # =========================================================================
-    # 清单 B：挖词清单（高转化词，迁精准组）
-    # 订单 ≥ 2 且 ROAS ≥ 3.0
+    # 清单 B：挖词清单（高转化词提拔）
+    # 聚合后：订单 ≥ 2 且 ROAS ≥ 3.0
     # =========================================================================
-    mining_mask = (df["广告订单"] >= 2) & (roas_val >= 3.0)
-    mining_raw = df[mining_mask].copy()
+    mining_rows = []
+    for _, r in agg_df.iterrows():
+        orders = float(r["广告订单"])
+        roas_v = float(r["ROAS"]) if r["ROAS"] is not None and not pd.isna(r["ROAS"]) else 0.0
+        if orders >= 2 and roas_v >= 3.0:
+            cpc_val = float(r["CPC"]) if r["CPC"] is not None and not pd.isna(r["CPC"]) else 0.50
+            rec_bid = round(cpc_val * 1.15, 2)
+            q = r["搜索词"]
+            camp = r["广告活动"]
+            ag = r["广告组"]
+            sales = float(r["总销售额"])
+            action = f"该词在【{camp}】已验证稳定出单，建议提拔加入【单品精准匹配】专属组，建议初始竞价 ${rec_bid:.2f}"
+            mining_rows.append({
+                "搜索词": q,
+                "来源广告活动": camp,
+                "来源广告组": ag,
+                "订单": int(orders),
+                "总销售额": sales,
+                "ROAS": roas_v,
+                "当前CPC": cpc_val,
+                "出价建议": rec_bid,
+                "建议动作": action,
+            })
 
-    def generate_mining_action(r: pd.Series) -> Tuple[float, str]:
-        cpc_raw = r.get("当前CPC", r.get("CPC"))
-        cpc = float(cpc_raw) if cpc_raw is not None and not pd.isna(cpc_raw) else 0.50
-        rec_bid = round(cpc * 1.15, 2)
-        action = f"该词已验证出单，建议加入精准匹配活动，出价建议 ${rec_bid:.2f}"
-        return rec_bid, action
-
-    if not mining_raw.empty:
-        for src, dst in [("广告花费", "花费"), ("广告订单", "订单"), ("CPC", "当前CPC")]:
-            if src in mining_raw.columns:
-                if dst in mining_raw.columns and dst != src:
-                    mining_raw = mining_raw.drop(columns=[dst])
-                mining_raw = mining_raw.rename(columns={src: dst})
-        bids_actions = mining_raw.apply(generate_mining_action, axis=1)
-        mining_raw["出价建议"] = [ba[0] for ba in bids_actions]
-        mining_raw["建议动作"] = [ba[1] for ba in bids_actions]
-        # 排序：订单降序，ROAS降序
-        mining_raw = mining_raw.sort_values(["订单", "ROAS"], ascending=[False, False])
-        mining_cols = ["搜索词", "来源广告活动", "订单", "总销售额", "ROAS", "当前CPC", "出价建议", "建议动作"]
-        mining_df = mining_raw[mining_cols].reset_index(drop=True)
+    if mining_rows:
+        mining_df = pd.DataFrame(mining_rows).sort_values(["订单", "ROAS"], ascending=[False, False]).reset_index(drop=True)
     else:
-        mining_df = pd.DataFrame(columns=[
-            "搜索词", "来源广告活动", "订单", "总销售额", "ROAS", "当前CPC", "出价建议", "建议动作"
-        ])
+        mining_df = empty_mining
 
     # =========================================================================
-    # 清单 C：高点击零转化词
-    # 点击 ≥ 50 且 订单 = 0（同时支持行级与跨活动词级聚合判断）
+    # 清单 C：高点击零转化词（聚合点击排查流量精准度与承接力）
+    # 1. 组内聚合维度：点击 ≥ 50 且 订单 = 0
+    # 2. 全局词级维度：跨活动累计点击 ≥ 50 且 订单 = 0
     # =========================================================================
-    # 1. 单行维度点击 >= 50 且 订单 = 0
-    row_hc = df[(df["点击"] >= 50) & (df["广告订单"] == 0)].copy()
-
-    # 2. 词级跨活动汇总点击 >= 50 且 订单 = 0（只汇总点击>=10的潜在异常词以极速完成）
-    high_click_cand = df[(df["点击"] >= 10) & (df["广告订单"] == 0)]
-    if not high_click_cand.empty:
-        agg_cand = high_click_cand.groupby("搜索词").agg(
-            总点击=("点击", "sum"),
-            总订单=("广告订单", "sum"),
-            总花费=("广告花费", "sum"),
-            总曝光=("曝光量", "sum"),
-            活动列表=("来源广告活动", lambda x: "、".join(sorted(x.unique()))),
-        ).reset_index()
-        agg_hc = agg_cand[(agg_cand["总点击"] >= 50) & (agg_cand["总订单"] == 0)]
-    else:
-        agg_hc = pd.DataFrame()
-
     hc_rows = []
     seen_queries = set()
 
-    for _, r in row_hc.iterrows():
-        q = r["搜索词"]
-        seen_queries.add(q)
-        cpc_val = r["CPC"]
-        ctr_val = r["CTR"]
-        hc_rows.append({
-            "搜索词": q,
-            "来源广告活动": r["来源广告活动"],
-            "花费": r["广告花费"],
-            "点击": int(r["点击"]),
-            "CTR": ctr_val,
-            "CPC": cpc_val,
-            "订单": 0,
-            "诊断建议": "流量不精准或Listing转化问题，建议排查页面承接力或添加否定精准",
-        })
-
-    for _, r in agg_hc.iterrows():
-        q = r["搜索词"]
-        if q not in seen_queries:
-            seen_queries.add(q)
-            clicks = r["总点击"]
-            spend = r["总花费"]
-            impr = r["总曝光"]
-            cpc_val = safe_divide(spend, clicks)
-            ctr_val = safe_divide(clicks, impr)
+    # 1. 活动组内部点击 >= 50
+    for _, r in agg_df.iterrows():
+        clicks = int(r["点击"])
+        orders = int(r["广告订单"])
+        if clicks >= 50 and orders == 0:
+            q = r["搜索词"]
+            seen_queries.add((r["广告活动"], q))
             hc_rows.append({
                 "搜索词": q,
-                "来源广告活动": r["活动列表"],
-                "花费": spend,
-                "点击": int(clicks),
-                "CTR": ctr_val,
-                "CPC": cpc_val,
+                "来源广告活动": f"{r['广告活动']} (组: {r['广告组']})",
+                "花费": float(r["广告花费"]),
+                "点击": clicks,
+                "CTR": r["CTR"],
+                "CPC": r["CPC"],
                 "订单": 0,
-                "诊断建议": "跨活动多渠道持续消耗且零转化，流量与商品不符，建议立即在各活动加入否定精准",
+                "诊断建议": "组内高频点击但零转化：流量意图与落地页不符或价格竞争力不足，建议页面排查或加否定精准",
             })
+
+    # 2. 跨活动汇总点击 >= 50（使用字典聚合缓存，避免全表暴力扫描）
+    seen_terms_hc = {r["搜索词"] for r in hc_rows}
+    for term, g_data in global_term_agg.items():
+        tot_clicks = int(g_data.get("全店总点击", 0))
+        tot_orders = int(g_data.get("全店总订单", 0))
+        if tot_clicks >= 50 and tot_orders == 0:
+            if g_data.get("关联活动数", 1) > 1 and term not in seen_terms_hc:
+                tot_spend = float(g_data.get("全店总花费", 0.0))
+                tot_impr = float(g_data.get("全店总曝光", 0.0))
+                hc_rows.append({
+                    "搜索词": term,
+                    "来源广告活动": f"跨 {g_data.get('关联活动数', 1)} 个活动",
+                    "花费": tot_spend,
+                    "点击": tot_clicks,
+                    "CTR": safe_divide(tot_clicks, tot_impr),
+                    "CPC": safe_divide(tot_spend, tot_clicks),
+                    "订单": 0,
+                    "诊断建议": "全店多活动累计高点击零转化：属于典型泛流量大词消耗，建议在全店相关活动中同步添加否定精准",
+                })
 
     if hc_rows:
         high_clicks_df = pd.DataFrame(hc_rows).sort_values("点击", ascending=False).reset_index(drop=True)
     else:
-        high_clicks_df = pd.DataFrame(columns=[
-            "搜索词", "来源广告活动", "花费", "点击", "CTR", "CPC", "订单", "诊断建议"
-        ])
+        high_clicks_df = empty_hc
 
     # =========================================================================
-    # 统计信息计算
+    # 统计信息汇总
     # =========================================================================
-    p0_count = len(p0_df)
-    p0_spend = float(p0_df["广告花费"].sum()) if not p0_df.empty else 0.0
+    p0_sub = neg_df[neg_df["优先级"] == "P0"] if not neg_df.empty else pd.DataFrame()
+    p1_sub = neg_df[neg_df["优先级"] == "P1"] if not neg_df.empty else pd.DataFrame()
 
-    p1_count = len(p1_df)
-    p1_spend = float(p1_df["广告花费"].sum()) if not p1_df.empty else 0.0
+    p0_count = len(p0_sub)
+    p0_spend = float(p0_sub["花费"].sum()) if not p0_sub.empty else 0.0
+
+    p1_count = len(p1_sub)
+    p1_spend = float(p1_sub["花费"].sum()) if not p1_sub.empty else 0.0
 
     mining_count = len(mining_df)
     mining_sales = float(mining_df["总销售额"].sum()) if not mining_df.empty else 0.0
 
     summary_text = (
-        f"共识别 P0 否词 {p0_count} 个，合计浪费花费 ${p0_spend:,.2f}；"
-        f"P1 否词 {p1_count} 个，合计 ${p1_spend:,.2f}；"
-        f"可挖词 {mining_count} 个，贡献销售额 ${mining_sales:,.2f}。"
+        f"经跨活动与广告组聚合校验：识别 P0 否词 {p0_count} 个（浪费 ${p0_spend:,.2f}）；"
+        f"P1 否词 {p1_count} 个（${p1_spend:,.2f}）；"
+        f"高转化可挖词 {mining_count} 个（贡献销售额 ${mining_sales:,.2f}）。"
     )
 
     stats = {
@@ -283,6 +360,8 @@ def mine_search_terms(
         "mining_sales": round(mining_sales, 2),
         "high_clicks_count": len(high_clicks_df),
         "summary_text": summary_text,
+        "dynamic_neg_spend_threshold": round(dyn_neg_p0_spend, 2),
+        "effective_aov": round(effective_aov, 2),
     }
 
     return neg_df, mining_df, high_clicks_df, stats

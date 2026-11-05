@@ -1,14 +1,31 @@
 import io
 import os
+import sys
+import html
+from typing import Any, Dict, List, Optional
+from pathlib import Path
+
+# Ensure root directory is in sys.path for cloud deployment (Streamlit Cloud, Linux containers)
+ROOT_DIR = Path(__file__).resolve().parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+def safe_html(val: Any) -> str:
+    """HTML 实体安全转义，防止 XSS 脚本注入攻击"""
+    if val is None:
+        return ""
+    return html.escape(str(val))
+
 from data_loader.loader import (
     load_single_file,
     identify_table_type,
     TABLE_CONFIG,
+    get_all_cleaning_anomalies,
 )
 from data_loader.sku_mapper import (
     load_sku_mapping,
@@ -31,6 +48,10 @@ from analyzer import (
     generate_store_overview_analysis,
     generate_product_matrix_analysis,
     get_decision_mapping_guide,
+    load_sku_cost_table,
+    generate_sku_cost_template,
+    calculate_sku_profit_analytics,
+    AdDecisionEngine,
 )
 
 # =========================================================================
@@ -203,7 +224,7 @@ def parse_single_file_cached(file_name: str, file_bytes: bytes, forced_type: str
     return t_type, df, total_row
 
 @st.cache_data(show_spinner=False)
-def parse_trend_data_cached(file_records_tuple: tuple, sku_map_items: tuple, target_acos: float):
+def parse_trend_data_cached(file_records_tuple: tuple, sku_map_items: tuple, target_acos: float, breakeven_acos: float = 0.35):
     """缓存多期/每日趋势分析的建模运算结果"""
     sku_map = dict(sku_map_items) if sku_map_items else {}
     records = []
@@ -219,7 +240,7 @@ def parse_trend_data_cached(file_records_tuple: tuple, sku_map_items: tuple, tar
             })
     if not records:
         return pd.DataFrame(), pd.DataFrame(), [], pd.DataFrame()
-    return build_sku_trend_data(records, sku_map=sku_map, target_acos=target_acos)
+    return build_sku_trend_data(records, sku_map=sku_map, target_acos=target_acos, breakeven_acos=breakeven_acos)
 
 def fmt_money(val, default="N/A"):
     if val is None or pd.isna(val):
@@ -311,15 +332,81 @@ days_input = st.sidebar.number_input(
 )
 analysis_days = days_input if days_input > 0 else None
 
-target_acos_input = st.sidebar.slider(
-    "目标 / 保本 ACOS 警戒线 (%)",
-    min_value=10,
-    max_value=60,
-    value=25,
+st.sidebar.markdown("---")
+st.sidebar.subheader("🎯 ACoS 盈亏与目标双线解耦")
+
+breakeven_acos_input = st.sidebar.slider(
+    "保本 ACoS 警戒线 / 毛利率 (%)",
+    min_value=15,
+    max_value=70,
+    value=35,
     step=1,
-    help="跨境电商保本 ACOS 参数，用于标记广告投产亏损或侵蚀毛利的 SKU 与活动，对应保本 ROAS = 1 / ACOS",
+    help="跨境电商保本线 = 商品毛利率（扣除采购成本、头程尾程运费及平台佣金后的毛利率）。当广告 ACoS 高于此线即产生净亏损；低于此线即产生正向毛利贡献。",
+)
+breakeven_acos = breakeven_acos_input / 100.0
+
+target_acos_input = st.sidebar.slider(
+    "目标 ACoS 期望线 (%)",
+    min_value=10,
+    max_value=50,
+    value=20,
+    step=1,
+    help="广告投放期望达成目标线（通常设定为毛利率扣除预期纯利目标）。ACoS 低于此线属于高盈利超额产出区间。",
 )
 target_acos = target_acos_input / 100.0
+
+col_cpa, col_aov = st.sidebar.columns(2)
+with col_cpa:
+    target_cpa_input = st.number_input(
+        "目标 CPA ($)",
+        min_value=0.0,
+        max_value=200.0,
+        value=0.0,
+        step=0.5,
+        help="期望转化成本上限。留空(0)时系统按【大盘AOV × 目标ACoS】动态推导",
+    )
+with col_aov:
+    aov_override_input = st.number_input(
+        "基准 AOV ($)",
+        min_value=0.0,
+        max_value=1000.0,
+        value=0.0,
+        step=1.0,
+        help="基准客单价。留空(0)时系统自动由销售额/订单计算",
+    )
+effective_cpa_override = target_cpa_input if target_cpa_input > 0 else None
+effective_aov_override = aov_override_input if aov_override_input > 0 else None
+
+# SKU 商品成本底表（真实利润模型）
+st.sidebar.markdown("---")
+st.sidebar.subheader("💰 商品单位成本底表（真实净利模型）")
+if "sku_cost_dict" not in st.session_state:
+    st.session_state["sku_cost_dict"] = {}
+
+cost_file = st.sidebar.file_uploader(
+    "上传商品成本表（.xlsx / .csv）",
+    type=["xlsx", "xls", "csv"],
+    help="包含字段：SKU、采购成本、头程、尾程运费、平台佣金率。上传后打通计算真实的广告前毛利与广告后真实净贡献。",
+    key="global_sku_cost_uploader",
+)
+
+if cost_file is not None:
+    try:
+        loaded_costs, cost_err = load_sku_cost_table(cost_file)
+        if cost_err:
+            st.sidebar.error(cost_err)
+        else:
+            st.session_state["sku_cost_dict"] = loaded_costs
+            st.sidebar.success(f"已识别 {len(loaded_costs)} 个 SKU 成本配置")
+    except Exception as e:
+        st.sidebar.error(f"成本表解析失败: {e}")
+
+st.sidebar.download_button(
+    label="📄 下载 SKU 成本底表模板",
+    data=generate_sku_cost_template(),
+    file_name="SKU商品单位成本配置模板.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+)
 
 # SKU 映射表
 st.sidebar.markdown("---")
@@ -380,7 +467,8 @@ if st.sidebar.button("🗑️ 清空所有板块缓存", help="清空已加载�
 # =========================================================================
 tab_options = [
     "📈 SKU多期趋势看板",
-    "🎯 综合决策与总动作清单",
+    "🎯 综合决策中枢",
+    "💰 SKU真实利润模型",
     "① 广告活动诊断",
     "② 搜索词否词/挖词",
     "③ 关键词调价",
@@ -412,11 +500,12 @@ def render_section_uploader(
     if cur_data is not None:
         c_left, c_right = st.columns([4, 1])
         with c_left:
+            disp_title = safe_html(cur_fname or default_name)
             st.markdown(
                 f"""
                 <div class="source-bar">
                     <div>
-                        <span class="source-tag">🟢 当前板块数据已就绪：【{cur_fname or default_name}】</span>
+                        <span class="source-tag">🟢 当前板块数据已就绪：【{disp_title}】</span>
                         <span class="source-sub">（已生成专属深度分析与优化建议）</span>
                     </div>
                 </div>
@@ -442,10 +531,10 @@ def render_section_uploader(
             f"""
             <div class="upload-box">
                 <div style="font-size: 15px; font-weight: 600; color: #1e293b; margin-bottom: 6px;">
-                    📂 暂无【{default_name}】数据
+                    📂 暂无【{safe_html(default_name)}】数据
                 </div>
                 <div style="font-size: 13px; color: #64748b; margin-bottom: 12px;">
-                    {help_text}
+                    {safe_html(help_text)}
                 </div>
             </div>
             """,
@@ -483,7 +572,7 @@ with tabs[0]:
                 if isinstance(t_file, list):
                     file_tuple = tuple((f.name, f.getvalue()) for f in t_file)
                     p_df, s_sum, anoms, d_macro = parse_trend_data_cached(
-                        file_tuple, sku_items_tuple, target_acos
+                        file_tuple, sku_items_tuple, target_acos, breakeven_acos
                     )
                     update_section("trend", {
                         "period_df": p_df, "sku_summary": s_sum, "anomalies": anoms, "daily_macro": d_macro
@@ -491,7 +580,7 @@ with tabs[0]:
                 else:
                     file_tuple = ((t_file.name, t_file.getvalue()),)
                     p_df, s_sum, anoms, d_macro = parse_trend_data_cached(
-                        file_tuple, sku_items_tuple, target_acos
+                        file_tuple, sku_items_tuple, target_acos, breakeven_acos
                     )
                     update_section("trend", {
                         "period_df": p_df, "sku_summary": s_sum, "anomalies": anoms, "daily_macro": d_macro
@@ -663,17 +752,23 @@ with tabs[0]:
             is_good = "🚀" in status_tag or "🌟" in status_tag or "放量" in status_tag
             box_class = "advice-box-danger" if is_bad else ("advice-box-success" if is_good else "advice-box")
 
+            sku_disp_clean = safe_html(sku_info['SKU展示'])
+            tag_clean = safe_html(status_tag)
+            feature_clean = safe_html(sku_info['数据特征剖析'])
+            action_clean = safe_html(sku_info['建议预警动作'])
+            cls_clean = safe_html(box_class)
+
             st.markdown(
                 f"""
-                <div class="advice-box {box_class}">
+                <div class="advice-box {cls_clean}">
                     <div style="font-weight: 700; font-size: 15px; margin-bottom: 6px;">
-                        📌 【{sku_info['SKU展示']}】 走势评级：<span style="color: {'#dc2626' if is_bad else ('#16a34a' if is_good else '#2563eb')}">{status_tag}</span>
+                        📌 【{sku_disp_clean}】 走势评级：<span style="color: {'#dc2626' if is_bad else ('#16a34a' if is_good else '#2563eb')}">{tag_clean}</span>
                     </div>
                     <div style="font-size: 13.5px; color: #334155; margin-bottom: 4px;">
-                        <strong>数据特征剖析：</strong> {sku_info['数据特征剖析']}（累计花费 ${sku_info['总花费']:,.2f}，出单 {sku_info['总订单']}，整体 ROAS {sku_info['整体ROAS']}）
+                        <strong>数据特征剖析：</strong> {feature_clean}（累计花费 ${sku_info['总花费']:,.2f}，出单 {sku_info['总订单']}，整体 ROAS {sku_info['整体ROAS']}）
                     </div>
                     <div style="font-size: 14px; font-weight: 600; color: #0f172a;">
-                        👉 <strong>运营行动建议：</strong> {sku_info['建议预警动作']}
+                        👉 <strong>运营行动建议：</strong> {action_clean}
                     </div>
                 </div>
                 """,
@@ -829,18 +924,16 @@ with tabs[0]:
         )
 
 # =========================================================================
-# TAB 2: 🎯 综合决策与总动作清单
+# TAB 2: 🎯 统一智能决策中枢（4 层架构决策引擎）
 # =========================================================================
 with tabs[1]:
-    st.markdown("### 🎯 综合决策大盘与跨板块落地总动作清单")
-    st.caption("聚合各板块已上传数据，自动提炼大盘宏观指标、管理层内参摘要与 P0/P1 执行清单。")
+    st.markdown("### 🎯 统一智能决策中枢（4 层广告决策与防冲突引擎）")
+    st.caption("数据层清洗对齐 -> 专家规则并发评估 -> 冲突仲裁与动作去重 -> 最终结构化决策指令矩阵。")
 
-    # 聚合当前已有表格
     active_tables = {k: st.session_state["section_data"].get(k) for k in [
         "campaign", "search_term", "keyword", "ad_item", "platform", "page_type"
     ]}
 
-    # 如果商品广告列表为空，检查多期走势表是否有明细可以复用
     if active_tables.get("ad_item") is None and st.session_state["section_data"].get("trend") is not None:
         active_tables["ad_item"] = st.session_state["section_data"]["trend"]["period_df"]
 
@@ -849,8 +942,19 @@ with tabs[1]:
     if not has_any:
         st.info("💡 当前暂无任何广告业务数据。请先在其它专属业务板块上传对应表格（如在「📈 SKU多期趋势看板」上传 10.3--11.1 报表）。")
     else:
+        # 运行统一决策引擎
+        engine = AdDecisionEngine(
+            target_acos=target_acos,
+            breakeven_acos=breakeven_acos,
+            target_cpa=effective_cpa_override,
+            aov_override=effective_aov_override,
+            cost_dict=st.session_state.get("sku_cost_dict", {}),
+        )
+        engine_res = engine.run(active_tables)
+        dec_matrix = engine_res["decision_matrix"]
+        exec_sum = engine_res["executive_summary"]
+        conflict_log = engine_res["conflict_log"]
         overview = summarize_overview(active_tables)
-        action_df, exec_summary, action_stats = build_action_items(active_tables, days=analysis_days)
 
         spend_str = fmt_money(overview.get("大盘总花费"))
         sales_str = fmt_money(overview.get("总销售额"))
@@ -866,85 +970,197 @@ with tabs[1]:
         st.markdown(
             f"""
             <div class="kpi-grid">
-                <div class="kpi-card"><div class="kpi-label">大盘总花费</div><div class="kpi-value">{spend_str}</div></div>
-                <div class="kpi-card"><div class="kpi-label">广告总销售额</div><div class="kpi-value">{sales_str}</div></div>
-                <div class="kpi-card"><div class="kpi-label">整体 ROAS</div><div class="kpi-value">{roas_str}</div></div>
-                <div class="kpi-card"><div class="kpi-label">总订单数</div><div class="kpi-value">{orders_str}</div></div>
-                <div class="kpi-card"><div class="kpi-label">客单价 (AOV)</div><div class="kpi-value">{aov_str}</div></div>
-                <div class="kpi-card"><div class="kpi-label">整体点击率 (CTR)</div><div class="kpi-value">{ctr_str}</div></div>
-                <div class="kpi-card"><div class="kpi-label">平均点击成本 (CPC)</div><div class="kpi-value">{cpc_str}</div></div>
-                <div class="kpi-card"><div class="kpi-label">订单转化率 (CVR)</div><div class="kpi-value">{cvr_str}</div></div>
-                <div class="kpi-card"><div class="kpi-label">获客成本 (CPA)</div><div class="kpi-value">{cpa_str}</div></div>
-                <div class="kpi-card"><div class="kpi-label">新客订单占比</div><div class="kpi-value">{nb_str}</div></div>
+                <div class="kpi-card"><div class="kpi-label">大盘总花费</div><div class="kpi-value">{safe_html(spend_str)}</div></div>
+                <div class="kpi-card"><div class="kpi-label">广告总销售额</div><div class="kpi-value">{safe_html(sales_str)}</div></div>
+                <div class="kpi-card"><div class="kpi-label">整体 ROAS</div><div class="kpi-value">{safe_html(roas_str)}</div></div>
+                <div class="kpi-card"><div class="kpi-label">总订单数</div><div class="kpi-value">{safe_html(orders_str)}</div></div>
+                <div class="kpi-card"><div class="kpi-label">客单价 (AOV)</div><div class="kpi-value">{safe_html(aov_str)}</div></div>
+                <div class="kpi-card"><div class="kpi-label">整体点击率 (CTR)</div><div class="kpi-value">{safe_html(ctr_str)}</div></div>
+                <div class="kpi-card"><div class="kpi-label">平均点击成本 (CPC)</div><div class="kpi-value">{safe_html(cpc_str)}</div></div>
+                <div class="kpi-card"><div class="kpi-label">订单转化率 (CVR)</div><div class="kpi-value">{safe_html(cvr_str)}</div></div>
+                <div class="kpi-card"><div class="kpi-label">获客成本 (CPA)</div><div class="kpi-value">{safe_html(cpa_str)}</div></div>
+                <div class="kpi-card"><div class="kpi-label">新客订单占比</div><div class="kpi-value">{safe_html(nb_str)}</div></div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        cut_item = exec_summary[2].replace("3. 最该砍的 3 项 (P0 止血重点)：", "") if len(exec_summary) > 2 else "暂无严重浪费"
-        up_item = exec_summary[3].replace("4. 最该加的 3 项 (P1 扩量增长)：", "") if len(exec_summary) > 3 else "维持达标投放"
+        # 核心决策指标概览
+        st.markdown("#### 🧭 决策中枢核心推导与预估业务影响")
+        e1, e2, e3, e4, e5 = st.columns(5)
+        with e1:
+            st.metric("🚨 P0 紧急止损项", f"{exec_sum['p0_count']} 项", "今日必做")
+        with e2:
+            st.metric("📉 P1 结构控本项", f"{exec_sum['p1_count']} 项", "本周优化")
+        with e3:
+            st.metric("🚀 P2 提效拓量项", f"{exec_sum['p2_count']} 项", "加权放量")
+        with e4:
+            st.metric("🛡️ 预估可拦截浪费", f"${exec_sum['preventable_waste']:,.2f}", "封堵失血点")
+        with e5:
+            st.metric("📈 增长扩量机会", f"${exec_sum['growth_potential']:,.2f}", "高投产倾斜")
 
-        st.markdown(
-            f"""
-            <div class="summary-card">
-                <div style="font-weight: 600; font-size: 15.5px; color: #0f172a; margin-bottom: 8px;">
-                    📋 跨板块运营决策内参摘要
-                </div>
-                <div class="summary-item"><span class="summary-badge badge-blue">大盘表现</span> 广告总花费 <strong>{spend_str}</strong>，整体投产 <strong>{roas_str}</strong>。</div>
-                <div class="summary-item"><span class="summary-badge badge-red">紧急止血</span> 识别高损项 <strong>{action_stats.get('total_neg_count', 0)}</strong> 个，止损空间约 <strong>${action_stats.get('total_neg_spend', 0.0):,.2f}</strong>。</div>
-                <div class="summary-item"><span class="summary-badge badge-red">P0 优先砍</span> {cut_item}</div>
-                <div class="summary-item"><span class="summary-badge badge-green">P1 优先扩</span> {up_item}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        # 冲突仲裁审计日志展示
+        if conflict_log:
+            with st.expander(f"🛡️ 自动防冲突仲裁审计日志（已成功拦截并解决 {len(conflict_log)} 起跨规则冲突）", expanded=False):
+                st.caption("系统严格执行【止损优先与动作互斥】原则，同一关键词/实体在同一广告活动中禁止同时下达互斥指令：")
+                conf_df = pd.DataFrame(conflict_log)
+                st.dataframe(conf_df, use_container_width=True, hide_index=True)
 
-        # 动作清单
-        st.markdown("#### 📋 待落地落地执行总动作清单")
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.metric("P0 紧急必做", f"{action_stats.get('p0_count', 0)} 项")
-        with c2:
-            st.metric("P1 本周优化", f"{action_stats.get('p1_count', 0)} 项")
-        with c3:
-            st.metric("P2 观察建议", f"{action_stats.get('p2_count', 0)} 项")
-        with c4:
-            st.metric("总执行动作", f"{action_stats.get('total_actions', 0)} 项")
-
-        if not action_df.empty:
-            f_col1, f_col2 = st.columns([3, 1])
+        # 最终结构化决策指令总表
+        st.markdown("#### 📋 最终执行决策指令总表（已完成跨规则去重与仲裁）")
+        if not dec_matrix.empty:
+            f_col1, f_col2, f_col3 = st.columns([2, 2, 1])
             with f_col1:
-                p_filter = st.multiselect("筛选优先级：", ["P0", "P1", "P2"], default=["P0", "P1", "P2"])
+                p_filter = st.multiselect("按优先级筛选：", ["P0", "P1", "P2"], default=["P0", "P1", "P2"])
             with f_col2:
-                csv_act = action_df.to_csv(index=False).encode("utf-8-sig")
+                all_domains = list(dec_matrix["决策领域"].unique())
+                d_filter = st.multiselect("按业务领域筛选：", all_domains, default=all_domains)
+            with f_col3:
+                csv_dec = dec_matrix.to_csv(index=False).encode("utf-8-sig")
                 st.download_button(
-                    label=f"📥 导出清单 CSV ({len(action_df)}条)",
-                    data=csv_act,
-                    file_name="walmart_action_plan.csv",
+                    label=f"📥 导出决策清单 CSV ({len(dec_matrix)}项)",
+                    data=csv_dec,
+                    file_name="walmart_decision_matrix.csv",
                     mime="text/csv",
                 )
 
-            v_act_df = action_df.copy()
+            v_dec_df = dec_matrix.copy()
             if p_filter:
-                v_act_df = v_act_df[v_act_df["优先级"].isin(p_filter)]
+                v_dec_df = v_dec_df[v_dec_df["优先级"].isin(p_filter)]
+            if d_filter:
+                v_dec_df = v_dec_df[v_dec_df["决策领域"].isin(d_filter)]
 
             st.dataframe(
-                v_act_df,
+                v_dec_df,
                 column_config={
                     "优先级": st.column_config.TextColumn("优先级", width="small"),
-                    "动作类型": st.column_config.TextColumn("类型", width="small"),
-                    "操作对象": st.column_config.TextColumn("操作对象", width="medium"),
-                    "现状数字": st.column_config.TextColumn("现状数字", width="medium"),
-                    "具体操作描述": st.column_config.TextColumn("具体操作说明", width="large"),
+                    "决策领域": st.column_config.TextColumn("业务领域", width="small"),
+                    "对象标识": st.column_config.TextColumn("操作对象", width="medium"),
+                    "所属活动/范围": st.column_config.TextColumn("广告活动", width="medium"),
+                    "当前指标依据": st.column_config.TextColumn("数据事实依据", width="medium"),
+                    "决策执行指令": st.column_config.TextColumn("决策执行指令", width="large"),
+                    "预估影响金额($)": st.column_config.NumberColumn("预估影响 ($)", format="$%.2f"),
+                    "执行状态": st.column_config.TextColumn("状态", width="small"),
+                },
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        # 动态流量漏斗健康度与保本盈亏评估
+        st.markdown("---")
+        st.markdown("#### ⚖️ 广告保本盈亏与流量漏斗动态健康度诊断")
+        store_diag = generate_store_overview_analysis(
+            overview,
+            active_tables,
+            target_acos=target_acos,
+            breakeven_acos=breakeven_acos,
+        )
+
+        funnel_items = store_diag["funnel"]
+        f_cols = st.columns(4)
+        idx_f = 0
+        for f_name, f_data in funnel_items.items():
+            with f_cols[idx_f]:
+                st.metric(f_name, f_data["value"], f_data["status"])
+                st.caption(f"**基准**：{f_data['benchmark']}")
+                st.caption(f"{f_data['analysis']}")
+            idx_f += 1
+
+        if store_diag.get("strategic_insights"):
+            st.markdown("##### 💡 店铺运营核心矛盾与数据事实推导")
+            s_cols = st.columns(len(store_diag["strategic_insights"]))
+            for s_idx, s_item in enumerate(store_diag["strategic_insights"]):
+                with s_cols[s_idx]:
+                    st.info(f"**{s_item['dimension']}**\n\n📌 **事实**：{s_item['fact']}\n\n👉 **策略**：{s_item['insight']}")
+
+        # 数据清洗审计报告
+        all_anomalies = get_all_cleaning_anomalies(st.session_state["section_data"])
+        if all_anomalies:
+            with st.expander(f"⚠️ 数据清洗异常审计报告（已自动记录并规范化 {len(all_anomalies)} 处异常值）", expanded=False):
+                st.caption("系统已严格执行清洗审计，废除静默填 0。以下为本次报表清洗过程中自动识别与修复的非正规数据清单：")
+                anom_df = pd.DataFrame(all_anomalies)
+                st.dataframe(anom_df, use_container_width=True)
+
+# =========================================================================
+# TAB 3: 💰 SKU真实利润模型（商品成本底表与广告净贡献）
+# =========================================================================
+with tabs[2]:
+    st.markdown("### 💰 SKU 商品单位成本与真实净利模型")
+    st.caption("引入采购、头程、尾程运费与平台佣金底表，精确计算每个 SKU 的广告前毛利、广告花费与扣减广告后的真实净现金贡献。")
+
+    ad_item_table = st.session_state["section_data"].get("ad_item")
+    if ad_item_table is None and st.session_state["section_data"].get("trend") is not None:
+        ad_item_table = st.session_state["section_data"]["trend"]["period_df"]
+
+    if ad_item_table is None or ad_item_table.empty:
+        st.info("💡 请先在「📈 SKU多期趋势看板」或「④ 商品位诊断」上传广告商品列表报表以激活真实利润模型。")
+    else:
+        sku_costs = st.session_state.get("sku_cost_dict", {})
+        if not sku_costs:
+            st.warning("⚠️ 尚未在左侧边栏上传【商品单位成本表】。当前采用行业基准估算模型展示；建议上传成本表以获取 100% 精准的真实净利润与保本线。")
+
+        profit_df, p_stats = calculate_sku_profit_analytics(
+            ad_item_table, sku_costs, default_margin=breakeven_acos
+        )
+
+        if not profit_df.empty:
+            pm1, pm2, pm3, pm4, pm5 = st.columns(5)
+            with pm1:
+                st.metric("广告总销售额", f"${p_stats['total_sales']:,.2f}")
+            with pm2:
+                st.metric("广告前商品毛利", f"${p_stats['total_pre_ad_profit']:,.2f}", f"毛利率 {breakeven_acos*100:.1f}%")
+            with pm3:
+                st.metric("广告花费支出", f"${p_stats['total_spend']:,.2f}")
+            with pm4:
+                net_val = p_stats['total_post_ad_net_profit']
+                st.metric("广告后真实净贡献", f"${net_val:,.2f}", f"净利率 {p_stats['overall_net_margin']*100:.1f}%")
+            with pm5:
+                st.metric("盈利 / 亏损 SKU", f"{p_stats['profitable_sku_count']} 款 / {p_stats['loss_sku_count']} 款")
+
+            st.markdown("#### 📋 SKU 真实利润与广告保本线透视总表")
+            p_col1, p_col2 = st.columns([3, 1])
+            with p_col1:
+                tier_options = ["全部 SKU", "🚀 强力净盈利", "⚖️ 保本正贡献", "🚨 真实净亏损"]
+                sel_tier = st.selectbox("按真实盈利状态筛选：", tier_options)
+            with p_col2:
+                csv_profit = profit_df.to_csv(index=False).encode("utf-8-sig")
+                st.download_button(
+                    label=f"📥 导出 SKU 真实利润表 CSV ({len(profit_df)}款)",
+                    data=csv_profit,
+                    file_name="sku_true_profit_analytics.csv",
+                    mime="text/csv",
+                )
+
+            v_p_df = profit_df.copy()
+            if sel_tier != "全部 SKU":
+                v_p_df = v_p_df[v_p_df["盈利状态"] == sel_tier]
+
+            st.dataframe(
+                v_p_df[[
+                    "SKU", "成本来源", "广告销售额", "广告花费", "实际ACoS", "动态保本ACoS",
+                    "广告前毛利", "广告后真实净利", "广告后净利率", "盈利状态", "经营决策指令"
+                ]],
+                column_config={
+                    "SKU": st.column_config.TextColumn("SKU (Item ID)", width="medium"),
+                    "成本来源": st.column_config.TextColumn("成本匹配", width="small"),
+                    "广告销售额": st.column_config.NumberColumn("广告销售额 ($)", format="$%.2f"),
+                    "广告花费": st.column_config.NumberColumn("广告花费 ($)", format="$%.2f"),
+                    "实际ACoS": st.column_config.NumberColumn("实际 ACoS", format="%.1f%%"),
+                    "动态保本ACoS": st.column_config.NumberColumn("动态保本 ACoS", format="%.1f%%"),
+                    "广告前毛利": st.column_config.NumberColumn("广告前毛利 ($)", format="$%.2f"),
+                    "广告后真实净利": st.column_config.NumberColumn("广告后真实净利 ($)", format="$%.2f"),
+                    "广告后净利率": st.column_config.NumberColumn("净利率", format="%.1f%%"),
+                    "盈利状态": st.column_config.TextColumn("盈利评级", width="small"),
+                    "经营决策指令": st.column_config.TextColumn("经营决策指令", width="large"),
                 },
                 use_container_width=True,
                 hide_index=True,
             )
 
 # =========================================================================
-# TAB 3: ① 广告活动诊断板块
+# TAB 4: ① 广告活动诊断板块
 # =========================================================================
-with tabs[2]:
+with tabs[3]:
     st.markdown("### ① 广告活动健康度诊断")
     f_camp = render_section_uploader(
         sec_key="campaign",
@@ -1005,9 +1221,9 @@ with tabs[2]:
             st.error(f"计算异常: {e}")
 
 # =========================================================================
-# TAB 4: ② 搜索词否词/挖词板块
+# TAB 5: ② 搜索词否词/挖词板块
 # =========================================================================
-with tabs[3]:
+with tabs[4]:
     st.markdown("### ② 搜索词否词挖掘与精准词迁移")
     f_st = render_section_uploader(
         sec_key="search_term",
@@ -1041,18 +1257,59 @@ with tabs[3]:
 
             list_choice = st.radio("查看清单：", ["清单 A：否词清单", "清单 B：挖词清单", "清单 C：高点击零转化"], horizontal=True)
             if "清单 A" in list_choice:
-                st.dataframe(neg_df, use_container_width=True, hide_index=True)
+                st.dataframe(
+                    neg_df,
+                    column_config={
+                        "优先级": st.column_config.TextColumn("优先级", width="small"),
+                        "搜索词": st.column_config.TextColumn("搜索词", width="medium"),
+                        "来源广告活动": st.column_config.TextColumn("来源活动", width="medium"),
+                        "建议否定类型": st.column_config.TextColumn("建议否定匹配", width="medium"),
+                        "花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
+                        "点击": st.column_config.NumberColumn("点击", format="%d"),
+                        "订单": st.column_config.NumberColumn("订单", format="%d"),
+                        "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
+                        "建议动作": st.column_config.TextColumn("落地执行指令", width="large"),
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
             elif "清单 B" in list_choice:
-                st.dataframe(mining_df, use_container_width=True, hide_index=True)
+                st.dataframe(
+                    mining_df,
+                    column_config={
+                        "搜索词": st.column_config.TextColumn("搜索词", width="medium"),
+                        "来源广告活动": st.column_config.TextColumn("来源活动", width="medium"),
+                        "订单": st.column_config.NumberColumn("订单", format="%d"),
+                        "总销售额": st.column_config.NumberColumn("销售额 ($)", format="$%.2f"),
+                        "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
+                        "当前CPC": st.column_config.NumberColumn("当前 CPC", format="$%.2f"),
+                        "出价建议": st.column_config.NumberColumn("建议出价 ($)", format="$%.2f"),
+                        "建议动作": st.column_config.TextColumn("建议动作", width="large"),
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
             else:
-                st.dataframe(hc_df, use_container_width=True, hide_index=True)
+                st.dataframe(
+                    hc_df,
+                    column_config={
+                        "搜索词": st.column_config.TextColumn("搜索词", width="medium"),
+                        "来源广告活动": st.column_config.TextColumn("来源活动", width="medium"),
+                        "点击": st.column_config.NumberColumn("累计点击", format="%d"),
+                        "花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
+                        "CPC": st.column_config.NumberColumn("CPC ($)", format="$%.2f"),
+                        "诊断建议": st.column_config.TextColumn("诊断建议", width="large"),
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
         except Exception as e:
             st.error(f"计算异常: {e}")
 
 # =========================================================================
-# TAB 5: ③ 关键词调价板块
+# TAB 6: ③ 关键词调价板块
 # =========================================================================
-with tabs[4]:
+with tabs[5]:
     st.markdown("### ③ 关键词出价与状态调整")
     f_kw = render_section_uploader(
         sec_key="keyword",
@@ -1084,14 +1341,27 @@ with tabs[4]:
             with c4:
                 st.metric("🔄 误暂停潜力词", f"{kw_stats['unpause_count']} 个")
 
-            st.dataframe(all_kw, use_container_width=True, hide_index=True)
+            st.dataframe(
+                all_kw,
+                column_config={
+                    "建议分类": st.column_config.TextColumn("调整策略", width="small"),
+                    "关键词": st.column_config.TextColumn("关键词", width="medium"),
+                    "所在活动": st.column_config.TextColumn("所在活动", width="medium"),
+                    "实际当前竞价": st.column_config.TextColumn("实际当前竞价", width="small"),
+                    "建议出价调整": st.column_config.TextColumn("建议出价调整", width="medium"),
+                    "参考建议竞价": st.column_config.TextColumn("参考建议竞价", width="small"),
+                    "依据数字": st.column_config.TextColumn("调价依据与说明", width="large"),
+                },
+                use_container_width=True,
+                hide_index=True,
+            )
         except Exception as e:
             st.error(f"计算异常: {e}")
 
 # =========================================================================
-# TAB 6: ④ 商品位诊断板块
+# TAB 7: ④ 商品位诊断板块
 # =========================================================================
-with tabs[5]:
+with tabs[6]:
     st.markdown("### ④ 广告商品位诊断与单品生命周期矩阵")
     f_ad = render_section_uploader(
         sec_key="ad_item",
@@ -1134,9 +1404,9 @@ with tabs[5]:
             st.error(f"计算异常: {e}")
 
 # =========================================================================
-# TAB 7: ⑤ 平台与页面位置板块
+# TAB 8: ⑤ 平台与页面位置板块
 # =========================================================================
-with tabs[6]:
+with tabs[7]:
     st.markdown("### ⑤ 平台端与页面位置流量结构表现")
     p_col1, p_col2 = st.columns(2)
     with p_col1:
