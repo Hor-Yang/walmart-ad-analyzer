@@ -43,10 +43,10 @@ FIELD_MAPPING: Dict[str, List[str]] = {
         "建议竞价", "领星建议竞价", "系统建议竞价", "suggested bid", "suggested_bid", "recommended bid"
     ],
     "item_id": [
-        "项目ID", "item id", "item_id", "商品ID", "listing id", "asin", "itemid"
+        "项目ID", "item id", "item_id", "商品ID", "listing id", "asin", "itemid", "沃尔玛id", "沃尔玛ID", "广告项目id", "广告项目ID", "id", "item number"
     ],
     "sku": [
-        "sku", "平台sku", "店铺sku", "seller sku", "sellersku"
+        "sku", "sku id", "skuid", "sku_id", "平台sku", "店铺sku", "seller sku", "seller_sku", "sellersku", "msku", "商品编码", "内部sku"
     ],
     "date": [
         "日期", "date", "day", "周期", "投放日期", "time", "统计日期"

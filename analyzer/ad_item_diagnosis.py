@@ -2,9 +2,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from .metrics import safe_divide
+from data_loader.sku_mapper import apply_sku_mapping
 
 def diagnose_ad_items(
     ad_item_df: pd.DataFrame,
+    sku_map: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """
     广告商品（商品位）诊断分析模块：
@@ -84,10 +86,15 @@ def diagnose_ad_items(
         df["广告状态"] = df["广告状态"].astype(str).str.lower().str.strip()
     else:
         df["广告状态"] = "enabled"
+    if sku_map:
+        df = apply_sku_mapping(df, sku_map)
+
     has_sku = "SKU" in df.columns
     if has_sku:
         df["SKU"] = df["SKU"].astype(str).str.strip()
         sku_map_by_id = df.groupby("项目ID")["SKU"].first()
+    else:
+        sku_map_by_id = df.groupby("项目ID")["项目ID"].first()
 
     # 商品标题映射（取同项目ID中最完整的标题）
     title_map = df.sort_values("商品名称", key=lambda s: s.str.len()).groupby("项目ID")["商品名称"].last()
@@ -105,17 +112,13 @@ def diagnose_ad_items(
     ).reset_index()
 
     item_agg["商品名称"] = item_agg["项目ID"].map(title_map)
-    if has_sku:
-        item_agg["SKU"] = item_agg["项目ID"].map(sku_map_by_id).fillna(item_agg["项目ID"])
+    item_agg["SKU"] = item_agg["项目ID"].map(sku_map_by_id).fillna(item_agg["项目ID"])
     item_agg["ROAS"] = safe_divide(item_agg["销售额"], item_agg["花费"])
     item_agg["CVR"] = safe_divide(item_agg["订单"], item_agg["点击"])
     item_agg["CPC"] = safe_divide(item_agg["花费"], item_agg["点击"])
 
     top10_items = item_agg.sort_values("销售额", ascending=False).head(10).reset_index(drop=True)
-    if has_sku:
-        top10_cols = ["SKU", "项目ID", "商品名称", "销售额", "花费", "订单", "ROAS", "CVR", "CPC", "投放活动数"]
-    else:
-        top10_cols = ["项目ID", "商品名称", "销售额", "花费", "订单", "ROAS", "CVR", "CPC", "投放活动数"]
+    top10_cols = ["SKU", "项目ID", "商品名称", "销售额", "花费", "订单", "ROAS", "CVR", "CPC", "投放活动数"]
     top10_items = top10_items[top10_cols]
 
     # =========================================================================
@@ -128,10 +131,10 @@ def diagnose_ad_items(
             lambda r: f"已累计消耗 ${r['花费']:.2f} 且 0 转化，建议检查商品 Listing 价格、评价或在各活动暂停该商品投放",
             axis=1,
         )
-        burn_cols = ["SKU", "项目ID", "商品名称", "花费", "点击", "曝光", "投放活动数", "建议动作"] if has_sku else ["项目ID", "商品名称", "花费", "点击", "曝光", "投放活动数", "建议动作"]
+        burn_cols = ["SKU", "项目ID", "商品名称", "花费", "点击", "曝光", "投放活动数", "建议动作"]
         burning_items = burning_raw[burn_cols]
     else:
-        burn_cols = ["SKU", "项目ID", "商品名称", "花费", "点击", "曝光", "投放活动数", "建议动作"] if has_sku else ["项目ID", "商品名称", "花费", "点击", "曝光", "投放活动数", "建议动作"]
+        burn_cols = ["SKU", "项目ID", "商品名称", "花费", "点击", "曝光", "投放活动数", "建议动作"]
         burning_items = pd.DataFrame(columns=burn_cols)
 
     # =========================================================================
@@ -139,6 +142,8 @@ def diagnose_ad_items(
     # =========================================================================
     bid_eval = df[(df["建议竞价"] > 0) & (df["广告竞价"] > 0)].copy()
     if not bid_eval.empty:
+        if "SKU" not in bid_eval.columns:
+            bid_eval["SKU"] = bid_eval["项目ID"].map(sku_map_by_id).fillna(bid_eval["项目ID"])
         bid_eval["低于比例"] = (bid_eval["广告竞价"] - bid_eval["建议竞价"]) / bid_eval["建议竞价"]
         low_bid_raw = bid_eval[bid_eval["低于比例"] <= -0.30].copy()
         low_bid_raw = low_bid_raw.sort_values("广告花费", ascending=False).reset_index(drop=True)
@@ -149,15 +154,11 @@ def diagnose_ad_items(
         )
         low_cols = [
             "SKU", "项目ID", "商品名称", "广告活动", "广告竞价", "建议竞价", "低于幅度", "花费", "曝光量", "点击", "建议动作"
-        ] if has_sku else [
-            "项目ID", "商品名称", "广告活动", "广告竞价", "建议竞价", "低于幅度", "花费", "曝光量", "点击", "建议动作"
         ]
         low_bid_items = low_bid_raw.rename(columns={"广告花费": "花费"})[low_cols]
     else:
         low_cols = [
             "SKU", "项目ID", "商品名称", "广告活动", "广告竞价", "建议竞价", "低于幅度", "花费", "曝光量", "点击", "建议动作"
-        ] if has_sku else [
-            "项目ID", "商品名称", "广告活动", "广告竞价", "建议竞价", "低于幅度", "花费", "曝光量", "点击", "建议动作"
         ]
         low_bid_items = pd.DataFrame(columns=low_cols)
 

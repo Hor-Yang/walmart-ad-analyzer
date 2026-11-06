@@ -7,12 +7,13 @@ import openpyxl
 # 候选列名识别库
 ITEM_ID_CANDIDATES = [
     "项目id", "项目ID", "item id", "item_id", "itemid", "item_id(walmart)", 
-    "沃尔玛id", "沃尔玛ID", "商品id", "商品ID", "广告项目id", "广告项目ID", "id"
+    "沃尔玛id", "沃尔玛ID", "商品id", "商品ID", "广告项目id", "广告项目ID", "id",
+    "listing id", "listing_id", "asin", "item number", "item_number"
 ]
 
 SKU_CANDIDATES = [
-    "sku", "SKU", "seller sku", "seller_sku", "sellersku", "msku", "MSKU",
-    "自定义sku", "自定义SKU", "品名", "商品名称", "商品编码", "内部sku", "erp_sku"
+    "sku id", "skuid", "sku_id", "sku", "SKU", "seller sku", "seller_sku", "sellersku", "msku", "MSKU",
+    "自定义sku", "自定义SKU", "品名", "商品名称", "商品编码", "内部sku", "erp_sku", "平台sku", "店铺sku"
 ]
 
 DATE_CANDIDATES = [
@@ -99,9 +100,16 @@ def load_sku_mapping(file_obj: Any) -> Tuple[Dict[str, str], Optional[str]]:
             raw_sku = row[sku_col]
             if pd.isna(raw_id) or pd.isna(raw_sku):
                 continue
-            id_str = str(raw_id).strip().split(".")[0]
+            
+            # 强化清洗：去除 .0、前后空格、换行
+            id_str = str(raw_id).strip()
+            if id_str.endswith(".0"):
+                id_str = id_str[:-2]
+            id_core = id_str.split(".")[0].strip()
+            
             sku_str = str(raw_sku).strip()
-            if id_str and id_str != "-" and sku_str and sku_str != "-":
+            if id_core and id_core != "-" and sku_str and sku_str != "-":
+                sku_map[id_core] = sku_str
                 sku_map[id_str] = sku_str
 
         if not sku_map:
@@ -115,9 +123,9 @@ def load_sku_mapping(file_obj: Any) -> Tuple[Dict[str, str], Optional[str]]:
 def apply_sku_mapping(df: pd.DataFrame, sku_map: Dict[str, str], id_col: str = "项目ID") -> pd.DataFrame:
     """
     将 SKU 映射应用到包含 Item ID 的 DataFrame 中。
-    增加两列：
+    增加/更新两列：
     - 'SKU': 映射后的 SKU，未映射则保留原 Item ID
-    - 'SKU_Display': 便于展示的形式，如 'SKU (Item ID)'
+    - 'SKU展示' / 'SKU_Display': 便于展示的形式，如 'SKU (Item ID)'
     """
     if df is None or df.empty:
         return df
@@ -125,32 +133,50 @@ def apply_sku_mapping(df: pd.DataFrame, sku_map: Dict[str, str], id_col: str = "
     out = df.copy()
 
     actual_id_col = None
-    for cand in [id_col, "项目ID", "项目id", "item_id", "Item ID", "商品ID"]:
+    for cand in [id_col, "项目ID", "项目id", "item_id", "Item ID", "Item Id", "商品ID", "沃尔玛id"]:
         if cand in out.columns:
             actual_id_col = cand
             break
 
     if not actual_id_col:
+        # 如果没有明确的 ID 列，但已有 SKU 列且传入了 sku_map
+        if "SKU" in out.columns and sku_map:
+            out["SKU"] = out["SKU"].apply(lambda v: sku_map.get(str(v).strip().split(".")[0], str(v).strip()))
+            out["SKU展示"] = out["SKU"]
+            out["SKU_Display"] = out["SKU"]
         return out
 
     def _get_sku(val: Any) -> str:
         if pd.isna(val):
             return "未知"
-        s = str(val).strip().split(".")[0]
-        if sku_map and s in sku_map:
-            return sku_map[s]
+        raw = str(val).strip()
+        if raw.endswith(".0"):
+            raw = raw[:-2]
+        s = raw.split(".")[0].strip()
+        if sku_map:
+            if s in sku_map:
+                return sku_map[s]
+            if raw in sku_map:
+                return sku_map[raw]
         return s
 
     def _get_display(row: pd.Series) -> str:
         val = row.get(actual_id_col, "")
-        s = str(val).strip().split(".")[0]
+        if pd.isna(val):
+            return "未知"
+        raw = str(val).strip()
+        if raw.endswith(".0"):
+            raw = raw[:-2]
+        s = raw.split(".")[0].strip()
         mapped_sku = row.get("SKU", s)
-        if mapped_sku != s and mapped_sku != "未知":
+        if mapped_sku and mapped_sku != s and mapped_sku != "未知":
             return f"{mapped_sku} ({s})"
         return s
 
     out["SKU"] = out[actual_id_col].apply(_get_sku)
-    out["SKU_Display"] = out.apply(_get_display, axis=1)
+    disp_series = out.apply(_get_display, axis=1)
+    out["SKU展示"] = disp_series
+    out["SKU_Display"] = disp_series
 
     return out
 

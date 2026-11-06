@@ -33,6 +33,15 @@ from data_loader.sku_mapper import (
     generate_sku_template,
     generate_daily_trend_template,
 )
+from data_loader.session_storage import (
+    save_session_cache,
+    load_session_cache,
+    get_session_cache_metadata,
+    clear_session_cache,
+    record_upload_audit_log,
+    get_upload_audit_logs,
+    generate_audit_log_markdown,
+)
 from analyzer import (
     summarize_overview,
     agg_metrics,
@@ -305,17 +314,90 @@ if "trend_filter_choice" not in st.session_state:
     st.session_state["trend_filter_choice"] = "全部 SKU"
 
 def update_section(sec_key: str, data: Any, filename: str, file_bytes: bytes = None):
-    """更新独立板块数据并保留字节流缓存"""
+    """更新独立板块数据并保留字节流缓存，同时记录审计日志并自动持久化快照"""
     st.session_state["section_data"][sec_key] = data
     st.session_state["file_names"][sec_key] = filename
     if file_bytes is not None:
         st.session_state["file_bytes_cache"][sec_key] = file_bytes
+
+    if data is not None:
+        row_c = len(data) if isinstance(data, pd.DataFrame) else (len(data.get("period_df", [])) if isinstance(data, dict) and "period_df" in data else 0)
+        f_size = len(file_bytes) if file_bytes else 0
+        names = {
+            "trend": "📈 SKU多期走势",
+            "campaign": "① 广告活动报表",
+            "search_term": "② 搜索词报表",
+            "keyword": "③ 关键词报表",
+            "ad_item": "④ 商品广告列表",
+            "platform": "⑤ 平台报表",
+            "page_type": "⑤ 页面类型报表",
+        }
+        sec_label = names.get(sec_key, sec_key)
+        record_upload_audit_log(sec_label, filename, row_c, f_size, f"数据已就绪 ({row_c}行)")
+        save_session_cache(
+            st.session_state["section_data"],
+            st.session_state.get("sku_map", {}),
+            st.session_state.get("sku_cost_dict", {}),
+            st.session_state.get("file_names", {}),
+        )
 
 # =========================================================================
 # 顶部标题栏
 # =========================================================================
 st.title("领星 × 沃尔玛广告自动化分析工具")
 st.caption("固定业务板块独立解析 · SKU 多期全景走势与突变预警 · 店铺与单品深度诊断 · 落地动作清单")
+
+# =========================================================================
+# 侧边栏：持久化快照恢复与审计日志
+# =========================================================================
+session_meta = get_session_cache_metadata()
+if session_meta and session_meta.get("file_count", 0) > 0:
+    st.sidebar.markdown(
+        f"""
+        <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 10px; margin-bottom: 10px;">
+            <div style="font-weight: 700; color: #166534; font-size: 13.5px;">💾 检测到上次分析快照</div>
+            <div style="font-size: 12px; color: #15803d; margin-top: 3px;">
+                时间: {session_meta['timestamp']}<br/>
+                包含报表: {session_meta['file_count']} 个 | 映射 SKU: {session_meta['sku_count']} 个
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    col_snap1, col_snap2 = st.sidebar.columns([3, 2])
+    with col_snap1:
+        if st.button("🔄 一键恢复快照", help="无需重新上传报表，直接秒级恢复上一次分析进度与设置", key="btn_restore_snap"):
+            cached = load_session_cache()
+            if cached:
+                st.session_state["section_data"] = cached.get("section_data", {})
+                st.session_state["sku_map"] = cached.get("sku_map", {})
+                st.session_state["sku_cost_dict"] = cached.get("sku_cost_dict", {})
+                st.session_state["file_names"] = cached.get("file_names", {})
+                st.success("已成功从快照恢复数据！")
+                st.rerun()
+    with col_snap2:
+        if st.button("🗑️ 清空快照", help="删除磁盘上的上次快照记录", key="btn_clear_snap"):
+            clear_session_cache()
+            st.rerun()
+
+with st.sidebar.expander("📜 上传历史与分析审计日志", expanded=False):
+    logs = get_upload_audit_logs()
+    if logs:
+        st.caption(f"已记录 {len(logs)} 条上传与分析操作：")
+        log_df = pd.DataFrame(logs)
+        st.dataframe(log_df[["时间", "板块类别", "文件名", "数据行数"]], hide_index=True, use_container_width=True)
+        md_log = generate_audit_log_markdown()
+        st.download_button(
+            label="📥 导出审计日志 Markdown",
+            data=md_log,
+            file_name="walmart_ad_audit_log.md",
+            mime="text/markdown",
+            key="dl_audit_md"
+        )
+    else:
+        st.caption("暂无历史上传审计日志")
+
+st.sidebar.markdown("---")
 
 # =========================================================================
 # 侧边栏：全局数据导入与诊断参数
@@ -397,6 +479,19 @@ if cost_file is not None:
             st.sidebar.error(cost_err)
         else:
             st.session_state["sku_cost_dict"] = loaded_costs
+            record_upload_audit_log(
+                "💰 SKU成本表",
+                getattr(cost_file, "name", "cost_table.xlsx"),
+                len(loaded_costs),
+                getattr(cost_file, "size", 0),
+                f"已配置 {len(loaded_costs)} 个 SKU 成本项"
+            )
+            save_session_cache(
+                st.session_state["section_data"],
+                st.session_state.get("sku_map", {}),
+                st.session_state["sku_cost_dict"],
+                st.session_state.get("file_names", {}),
+            )
             st.sidebar.success(f"已识别 {len(loaded_costs)} 个 SKU 成本配置")
     except Exception as e:
         st.sidebar.error(f"成本表解析失败: {e}")
@@ -425,7 +520,25 @@ if sku_file is not None:
             st.sidebar.error(err)
         else:
             st.session_state["sku_map"] = loaded_map
-            st.sidebar.success(f"已识别 {len(loaded_map)} 个 SKU 映射")
+            # 关键：全链路回溯更新已存在的 ad_item 表格，确保立即显示对应 SKU
+            if st.session_state["section_data"].get("ad_item") is not None:
+                st.session_state["section_data"]["ad_item"] = apply_sku_mapping(
+                    st.session_state["section_data"]["ad_item"], loaded_map
+                )
+            record_upload_audit_log(
+                "🏷️ SKU映射表",
+                getattr(sku_file, "name", "sku_mapping.xlsx"),
+                len(loaded_map),
+                getattr(sku_file, "size", 0),
+                f"已匹配 {len(loaded_map)} 个 Item ID 映射关系"
+            )
+            save_session_cache(
+                st.session_state["section_data"],
+                st.session_state["sku_map"],
+                st.session_state.get("sku_cost_dict", {}),
+                st.session_state.get("file_names", {}),
+            )
+            st.sidebar.success(f"已识别并全量生效 {len(loaded_map)} 个 SKU 映射")
     except Exception as e:
         st.sidebar.error(f"映射表解析失败: {e}")
 
@@ -455,11 +568,13 @@ for key, name in [
     else:
         st.sidebar.caption(f"⚪ {name}：待上传对应文件")
 
-if st.sidebar.button("🗑️ 清空所有板块缓存", help="清空已加载的所有分析数据"):
+if st.sidebar.button("🗑️ 清空所有板块缓存", help="清空已加载的所有分析数据与持久化快照"):
     st.session_state["section_data"] = {k: None for k in st.session_state["section_data"]}
     st.session_state["file_names"] = {}
     st.session_state["file_bytes_cache"] = {}
     st.session_state["sku_map"] = {}
+    st.session_state["sku_cost_dict"] = {}
+    clear_session_cache()
     st.rerun()
 
 # =========================================================================
@@ -588,6 +703,8 @@ with tabs[0]:
                     # 同时为商品位诊断备用
                     if st.session_state["section_data"].get("ad_item") is None:
                         t_type, single_df, _ = parse_single_file_cached(t_file.name, t_file.getvalue(), "ad_item")
+                        if single_df is not None and st.session_state.get("sku_map"):
+                            single_df = apply_sku_mapping(single_df, st.session_state["sku_map"])
                         update_section("ad_item", single_df, t_file.name)
                 st.rerun()
         except Exception as e:
@@ -1135,21 +1252,29 @@ with tabs[2]:
             if sel_tier != "全部 SKU":
                 v_p_df = v_p_df[v_p_df["盈利状态"] == sel_tier]
 
+            # 转换为百分比数值用于 NumberColumn 格式化
+            if "实际ACoS" in v_p_df.columns:
+                v_p_df["实际ACoS%"] = pd.to_numeric(v_p_df["实际ACoS"], errors="coerce") * 100.0
+            if "动态保本ACoS" in v_p_df.columns:
+                v_p_df["动态保本ACoS%"] = pd.to_numeric(v_p_df["动态保本ACoS"], errors="coerce") * 100.0
+            if "广告后净利率" in v_p_df.columns:
+                v_p_df["广告后净利率%"] = pd.to_numeric(v_p_df["广告后净利率"], errors="coerce") * 100.0
+
             st.dataframe(
                 v_p_df[[
-                    "SKU", "成本来源", "广告销售额", "广告花费", "实际ACoS", "动态保本ACoS",
-                    "广告前毛利", "广告后真实净利", "广告后净利率", "盈利状态", "经营决策指令"
+                    "SKU", "成本来源", "广告销售额", "广告花费", "实际ACoS%", "动态保本ACoS%",
+                    "广告前毛利", "广告后真实净利", "广告后净利率%", "盈利状态", "经营决策指令"
                 ]],
                 column_config={
                     "SKU": st.column_config.TextColumn("SKU (Item ID)", width="medium"),
                     "成本来源": st.column_config.TextColumn("成本匹配", width="small"),
                     "广告销售额": st.column_config.NumberColumn("广告销售额 ($)", format="$%.2f"),
                     "广告花费": st.column_config.NumberColumn("广告花费 ($)", format="$%.2f"),
-                    "实际ACoS": st.column_config.NumberColumn("实际 ACoS", format="%.1f%%"),
-                    "动态保本ACoS": st.column_config.NumberColumn("动态保本 ACoS", format="%.1f%%"),
+                    "实际ACoS%": st.column_config.NumberColumn("实际 ACoS", format="%.2f%%"),
+                    "动态保本ACoS%": st.column_config.NumberColumn("动态保本 ACoS", format="%.2f%%"),
                     "广告前毛利": st.column_config.NumberColumn("广告前毛利 ($)", format="$%.2f"),
                     "广告后真实净利": st.column_config.NumberColumn("广告后真实净利 ($)", format="$%.2f"),
-                    "广告后净利率": st.column_config.NumberColumn("净利率", format="%.1f%%"),
+                    "广告后净利率%": st.column_config.NumberColumn("净利率", format="%.2f%%"),
                     "盈利状态": st.column_config.TextColumn("盈利评级", width="small"),
                     "经营决策指令": st.column_config.TextColumn("经营决策指令", width="large"),
                 },
@@ -1203,16 +1328,34 @@ with tabs[3]:
             if tag_sel and "全部" not in tag_sel:
                 v_live = v_live[v_live["标签"].apply(lambda ts: any(t in str(ts) for t in tag_sel))]
 
+            # 转换为百分比展示 (0.25 -> 25.0)
+            if "ACOS" in v_live.columns:
+                v_live["ACOS%"] = pd.to_numeric(v_live["ACOS"], errors="coerce") * 100.0
+            if "CTR" in v_live.columns:
+                v_live["CTR%"] = pd.to_numeric(v_live["CTR"], errors="coerce") * 100.0
+            if "CVR" in v_live.columns:
+                v_live["CVR%"] = pd.to_numeric(v_live["CVR"], errors="coerce") * 100.0
+
+            disp_cols = [
+                "活动名", "花费", "销售额", "订单", "ROAS", "ACOS%", "CPC", "CTR%", "CVR%", "每日预算", "标签", "诊断详情"
+            ]
+            v_live_disp = v_live[[c for c in disp_cols if c in v_live.columns]]
+
             st.dataframe(
-                v_live,
+                v_live_disp,
                 column_config={
                     "活动名": st.column_config.TextColumn("活动名称", width="medium"),
                     "花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
-                    "订单": st.column_config.NumberColumn("订单", format="%d"),
                     "销售额": st.column_config.NumberColumn("销售额 ($)", format="$%.2f"),
+                    "订单": st.column_config.NumberColumn("订单", format="%d"),
                     "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
-                    "标签": st.column_config.TextColumn("诊断标签", width="medium"),
+                    "ACOS%": st.column_config.NumberColumn("ACoS", format="%.2f%%"),
+                    "CPC": st.column_config.NumberColumn("CPC ($)", format="$%.2f"),
+                    "CTR%": st.column_config.NumberColumn("CTR", format="%.2f%%"),
+                    "CVR%": st.column_config.NumberColumn("CVR", format="%.2f%%"),
                     "每日预算": st.column_config.NumberColumn("每日预算 ($)", format="$%.2f"),
+                    "标签": st.column_config.TextColumn("诊断标签", width="medium"),
+                    "诊断详情": st.column_config.TextColumn("诊断详情与依据", width="large"),
                 },
                 use_container_width=True,
                 hide_index=True,
@@ -1257,8 +1400,11 @@ with tabs[4]:
 
             list_choice = st.radio("查看清单：", ["清单 A：否词清单", "清单 B：挖词清单", "清单 C：高点击零转化"], horizontal=True)
             if "清单 A" in list_choice:
+                v_neg = neg_df.copy()
+                if "CTR" in v_neg.columns:
+                    v_neg["CTR%"] = pd.to_numeric(v_neg["CTR"], errors="coerce") * 100.0
                 st.dataframe(
-                    neg_df,
+                    v_neg,
                     column_config={
                         "优先级": st.column_config.TextColumn("优先级", width="small"),
                         "搜索词": st.column_config.TextColumn("搜索词", width="medium"),
@@ -1266,6 +1412,7 @@ with tabs[4]:
                         "建议否定类型": st.column_config.TextColumn("建议否定匹配", width="medium"),
                         "花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
                         "点击": st.column_config.NumberColumn("点击", format="%d"),
+                        "CTR%": st.column_config.NumberColumn("CTR", format="%.2f%%"),
                         "订单": st.column_config.NumberColumn("订单", format="%d"),
                         "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
                         "建议动作": st.column_config.TextColumn("落地执行指令", width="large"),
@@ -1341,15 +1488,29 @@ with tabs[5]:
             with c4:
                 st.metric("🔄 误暂停潜力词", f"{kw_stats['unpause_count']} 个")
 
+            v_kw = all_kw.copy()
+            if "ACOS" in v_kw.columns:
+                v_kw["ACOS%"] = pd.to_numeric(v_kw["ACOS"], errors="coerce") * 100.0
+            if "CTR" in v_kw.columns:
+                v_kw["CTR%"] = pd.to_numeric(v_kw["CTR"], errors="coerce") * 100.0
+
             st.dataframe(
-                all_kw,
+                v_kw,
                 column_config={
                     "建议分类": st.column_config.TextColumn("调整策略", width="small"),
                     "关键词": st.column_config.TextColumn("关键词", width="medium"),
+                    "匹配方式": st.column_config.TextColumn("匹配", width="small"),
                     "所在活动": st.column_config.TextColumn("所在活动", width="medium"),
                     "实际当前竞价": st.column_config.TextColumn("实际当前竞价", width="small"),
                     "建议出价调整": st.column_config.TextColumn("建议出价调整", width="medium"),
                     "参考建议竞价": st.column_config.TextColumn("参考建议竞价", width="small"),
+                    "广告花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
+                    "广告订单": st.column_config.NumberColumn("订单", format="%d"),
+                    "总销售额": st.column_config.NumberColumn("销售额 ($)", format="$%.2f"),
+                    "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
+                    "ACOS%": st.column_config.NumberColumn("ACoS", format="%.2f%%"),
+                    "CTR%": st.column_config.NumberColumn("CTR", format="%.2f%%"),
+                    "CPC": st.column_config.NumberColumn("CPC ($)", format="$%.2f"),
                     "依据数字": st.column_config.TextColumn("调价依据与说明", width="large"),
                 },
                 use_container_width=True,
@@ -1374,6 +1535,8 @@ with tabs[6]:
             with st.spinner("正在解析商品广告位数据..."):
                 t_type, df, _ = parse_single_file_cached(f_ad.name, f_ad.getvalue(), "ad_item")
                 if df is not None:
+                    if st.session_state.get("sku_map"):
+                        df = apply_sku_mapping(df, st.session_state["sku_map"])
                     update_section("ad_item", df, f_ad.name, f_ad.getvalue())
                     st.rerun()
         except Exception as e:
@@ -1382,7 +1545,7 @@ with tabs[6]:
     ad_df = st.session_state["section_data"].get("ad_item")
     if ad_df is not None and not ad_df.empty:
         try:
-            ad_res = diagnose_ad_items(ad_df)
+            ad_res = diagnose_ad_items(ad_df, sku_map=st.session_state.get("sku_map"))
             ad_stats = ad_res["stats"]
             c1, c2, c3, c4 = st.columns(4)
             with c1:
@@ -1395,11 +1558,66 @@ with tabs[6]:
                 st.metric("⚠️ 状态异常商品", f"{ad_stats.get('abnormal_count', 0)} 个")
 
             st.markdown("#### 🏆 跑量商品 TOP 10")
-            st.dataframe(ad_res["top10_items"], use_container_width=True, hide_index=True)
+            v_top10 = ad_res["top10_items"].copy()
+            if "CVR" in v_top10.columns:
+                v_top10["CVR%"] = pd.to_numeric(v_top10["CVR"], errors="coerce") * 100.0
+
+            st.dataframe(
+                v_top10,
+                column_config={
+                    "SKU": st.column_config.TextColumn("SKU (店铺品名)", width="medium"),
+                    "项目ID": st.column_config.TextColumn("Item ID", width="small"),
+                    "商品名称": st.column_config.TextColumn("商品名称", width="medium"),
+                    "销售额": st.column_config.NumberColumn("销售额 ($)", format="$%.2f"),
+                    "花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
+                    "订单": st.column_config.NumberColumn("订单", format="%d"),
+                    "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
+                    "CVR%": st.column_config.NumberColumn("CVR", format="%.2f%%"),
+                    "CPC": st.column_config.NumberColumn("CPC ($)", format="$%.2f"),
+                    "投放活动数": st.column_config.NumberColumn("投放活动数", format="%d"),
+                },
+                use_container_width=True,
+                hide_index=True,
+            )
 
             if not ad_res["burning_items"].empty:
                 st.markdown("#### 🔥 烧钱零转化商品（花费 ≥ $30 且 0 单）")
-                st.dataframe(ad_res["burning_items"], use_container_width=True, hide_index=True)
+                v_burn = ad_res["burning_items"].copy()
+                st.dataframe(
+                    v_burn,
+                    column_config={
+                        "SKU": st.column_config.TextColumn("SKU (店铺品名)", width="medium"),
+                        "项目ID": st.column_config.TextColumn("Item ID", width="small"),
+                        "商品名称": st.column_config.TextColumn("商品名称", width="medium"),
+                        "花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
+                        "点击": st.column_config.NumberColumn("点击", format="%d"),
+                        "曝光": st.column_config.NumberColumn("曝光量", format="%d"),
+                        "投放活动数": st.column_config.NumberColumn("投放活动数", format="%d"),
+                        "建议动作": st.column_config.TextColumn("建议动作", width="large"),
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            if not ad_res["low_bid_items"].empty:
+                st.markdown("#### 📉 竞价偏低商品位（低于建议竞价 ≥30%）")
+                v_low = ad_res["low_bid_items"].copy()
+                st.dataframe(
+                    v_low,
+                    column_config={
+                        "SKU": st.column_config.TextColumn("SKU (店铺品名)", width="medium"),
+                        "项目ID": st.column_config.TextColumn("Item ID", width="small"),
+                        "商品名称": st.column_config.TextColumn("商品名称", width="medium"),
+                        "广告活动": st.column_config.TextColumn("广告活动", width="medium"),
+                        "广告竞价": st.column_config.NumberColumn("实际竞价 ($)", format="$%.2f"),
+                        "建议竞价": st.column_config.NumberColumn("建议竞价 ($)", format="$%.2f"),
+                        "低于幅度": st.column_config.TextColumn("低于幅度", width="small"),
+                        "花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
+                        "建议动作": st.column_config.TextColumn("优化行动指令", width="large"),
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
         except Exception as e:
             st.error(f"计算异常: {e}")
 
@@ -1431,9 +1649,55 @@ with tabs[7]:
             plc_res = analyze_placements(plat_df, page_df)
             if not plc_res["platform_df"].empty:
                 st.markdown("#### 📱 平台端流量结构")
-                st.dataframe(plc_res["platform_df"], use_container_width=True, hide_index=True)
+                v_plat = plc_res["platform_df"].copy()
+                if "花费占比" in v_plat.columns:
+                    v_plat["花费占比%"] = pd.to_numeric(v_plat["花费占比"], errors="coerce") * 100.0
+                if "CTR" in v_plat.columns:
+                    v_plat["CTR%"] = pd.to_numeric(v_plat["CTR"], errors="coerce") * 100.0
+                if "CVR" in v_plat.columns:
+                    v_plat["CVR%"] = pd.to_numeric(v_plat["CVR"], errors="coerce") * 100.0
+                st.dataframe(
+                    v_plat,
+                    column_config={
+                        "平台": st.column_config.TextColumn("平台渠道", width="small"),
+                        "花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
+                        "花费占比%": st.column_config.NumberColumn("花费占比", format="%.1f%%"),
+                        "订单": st.column_config.NumberColumn("订单", format="%d"),
+                        "销售额": st.column_config.NumberColumn("销售额 ($)", format="$%.2f"),
+                        "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
+                        "CPC": st.column_config.NumberColumn("CPC ($)", format="$%.2f"),
+                        "CTR%": st.column_config.NumberColumn("CTR", format="%.2f%%"),
+                        "CVR%": st.column_config.NumberColumn("CVR", format="%.2f%%"),
+                        "建议动作": st.column_config.TextColumn("渠道优化建议", width="large"),
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
             if not plc_res["page_type_df"].empty:
                 st.markdown("#### 📑 页面类型位置表现")
-                st.dataframe(plc_res["page_type_df"], use_container_width=True, hide_index=True)
+                v_page = plc_res["page_type_df"].copy()
+                if "花费占比" in v_page.columns:
+                    v_page["花费占比%"] = pd.to_numeric(v_page["花费占比"], errors="coerce") * 100.0
+                if "CTR" in v_page.columns:
+                    v_page["CTR%"] = pd.to_numeric(v_page["CTR"], errors="coerce") * 100.0
+                if "CVR" in v_page.columns:
+                    v_page["CVR%"] = pd.to_numeric(v_page["CVR"], errors="coerce") * 100.0
+                st.dataframe(
+                    v_page,
+                    column_config={
+                        "页面类型": st.column_config.TextColumn("页面位置", width="small"),
+                        "花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
+                        "花费占比%": st.column_config.NumberColumn("花费占比", format="%.1f%%"),
+                        "订单": st.column_config.NumberColumn("订单", format="%d"),
+                        "销售额": st.column_config.NumberColumn("销售额 ($)", format="$%.2f"),
+                        "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
+                        "CPC": st.column_config.NumberColumn("CPC ($)", format="$%.2f"),
+                        "CTR%": st.column_config.NumberColumn("CTR", format="%.2f%%"),
+                        "CVR%": st.column_config.NumberColumn("CVR", format="%.2f%%"),
+                        "诊断建议": st.column_config.TextColumn("位置优化建议", width="large"),
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
         except Exception as e:
             st.error(f"计算异常: {e}")

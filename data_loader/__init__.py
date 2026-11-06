@@ -15,6 +15,15 @@ from .sku_mapper import (
     generate_sku_template,
     generate_daily_trend_template,
 )
+from .session_storage import (
+    save_session_cache,
+    load_session_cache,
+    get_session_cache_metadata,
+    clear_session_cache,
+    record_upload_audit_log,
+    get_upload_audit_logs,
+    generate_audit_log_markdown,
+)
 
 __all__ = [
     "load_all",
@@ -26,4 +35,11 @@ __all__ = [
     "apply_sku_mapping",
     "generate_sku_template",
     "generate_daily_trend_template",
+    "save_session_cache",
+    "load_session_cache",
+    "get_session_cache_metadata",
+    "clear_session_cache",
+    "record_upload_audit_log",
+    "get_upload_audit_logs",
+    "generate_audit_log_markdown",
 ]
