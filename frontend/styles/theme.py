@@ -1,175 +1,295 @@
 """
-企业级 SaaS 统一视觉设计系统 (Design System)
-规范：现代、简洁、低饱和度、以数据为中心、卡片化布局
+Apple 风格统一视觉设计系统 (Apple Design System)
+设计哲学：极简纯净、高通透感、拟态微阴影、圆角精修、专注数据
 """
 
 SAAS_THEME_CSS = """
 <style>
-/* 引入现代系统字体族 */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+/* 引入 Apple 官方同款英文字体族 */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
-html, body, [class*="css"] {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    color: #1e293b;
+:root {
+    --apple-bg: #f5f6f8;
+    --apple-surface: #ffffff;
+    --apple-text-primary: #1d1d1f;
+    --apple-text-secondary: #86868b;
+    --apple-text-tertiary: #a1a1a6;
+    --apple-border: rgba(0, 0, 0, 0.06);
+    --apple-blue: #0071e3;
+    --apple-blue-light: #e8f2fe;
+    --apple-green: #34c759;
+    --apple-green-light: #e6f7ed;
+    --apple-red: #ff3b30;
+    --apple-red-light: #feeceb;
+    --apple-radius-sm: 8px;
+    --apple-radius-md: 14px;
+    --apple-radius-lg: 20px;
 }
 
-/* 隐藏 Streamlit 原生装饰性元素 */
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-header {visibility: hidden;}
-.stDeployButton {display: none;}
+/* 全局字体与平滑渲染 */
+html, body, [class*="css"], [class*="st-"] {
+    font-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "SF Pro Text", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", Arial, sans-serif !important;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    color: var(--apple-text-primary);
+}
 
-/* 主工作区背景与边距优化 */
+/* 全局工作台底色 */
+.stApp {
+    background-color: var(--apple-bg) !important;
+}
+
+/* 隐藏无关杂项，保留头部控制栏 */
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+.stDeployButton { display: none !important; }
+[data-testid="stToolbar"] { display: none !important; }
+
+/* =========================================================================
+   1. 解决侧边栏收起后按钮丢失 Bug：Apple 悬浮胶囊恢复按钮
+   ========================================================================= */
+header {
+    background: transparent !important;
+    height: 0px !important;
+}
+
+/* 侧边栏收起后在页面左上角展现的高质感悬浮按钮 */
+[data-testid="collapsedControl"] {
+    display: flex !important;
+    visibility: visible !important;
+    position: fixed !important;
+    top: 16px !important;
+    left: 16px !important;
+    z-index: 999999 !important;
+    width: 40px !important;
+    height: 40px !important;
+    background: rgba(255, 255, 255, 0.95) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    color: #1d1d1f !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    cursor: pointer !important;
+}
+
+[data-testid="collapsedControl"]:hover {
+    background: #ffffff !important;
+    transform: scale(1.06) !important;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12) !important;
+}
+
+[data-testid="collapsedControl"] svg {
+    width: 20px !important;
+    height: 20px !important;
+    stroke-width: 2.2 !important;
+    color: #1d1d1f !important;
+}
+
+/* 主工作区内边距优化 */
 .block-container {
-    padding-top: 1.2rem;
-    padding-bottom: 2.5rem;
-    padding-left: 2rem;
-    padding-right: 2rem;
+    padding-top: 1.5rem !important;
+    padding-bottom: 3rem !important;
+    padding-left: 2.5rem !important;
+    padding-right: 2.5rem !important;
     max-width: 100% !important;
 }
 
-/* 顶部全局筛选条卡片 */
-.global-filter-bar {
-    background-color: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 12px 18px 4px 18px;
-    margin-bottom: 18px;
-    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
-}
-
-.filter-bar-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    color: #475569;
-}
-
-/* KPI 指标卡 */
-.kpi-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 16px 18px;
-    margin-bottom: 12px;
-    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-.kpi-card:hover {
-    box-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.05);
-}
-.kpi-title {
-    font-size: 13px;
-    font-weight: 500;
-    color: #64748b;
-    margin-bottom: 6px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-.kpi-value {
-    font-size: 26px;
-    font-weight: 700;
-    color: #0f172a;
-    line-height: 1.2;
-    letter-spacing: -0.02em;
-}
-.kpi-sub {
-    font-size: 12px;
-    color: #94a3b8;
-    margin-top: 6px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-.kpi-delta-up {
-    color: #059669;
-    font-weight: 600;
-}
-.kpi-delta-down {
-    color: #dc2626;
-    font-weight: 600;
-}
-
-/* 模块容器卡片 */
-.saas-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 20px 22px;
-    margin-bottom: 18px;
-    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.03);
-}
-
-.saas-card-header {
-    font-size: 16px;
-    font-weight: 600;
-    color: #0f172a;
-    margin-bottom: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-/* 状态徽章 */
-.badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 9999px;
-    font-size: 11px;
-    font-weight: 600;
-}
-.badge-blue { background-color: #eff6ff; color: #1d4ed8; }
-.badge-green { background-color: #ecfdf5; color: #047857; }
-.badge-amber { background-color: #fffbeb; color: #b45309; }
-.badge-red { background-color: #fef2f2; color: #b91c1c; }
-.badge-slate { background-color: #f1f5f9; color: #475569; }
-
-/* 侧边导航栏样式优化 */
+/* =========================================================================
+   2. Apple 风格侧边栏 (Light Frosted macOS Style)
+   ========================================================================= */
 [data-testid="stSidebar"] {
-    background-color: #0f172a !important;
-    color: #f8fafc !important;
-    border-right: 1px solid #1e293b;
+    background-color: #f7f8fa !important;
+    border-right: 1px solid rgba(0, 0, 0, 0.06) !important;
 }
 
-[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3,
-[data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
-    color: #e2e8f0 !important;
+[data-testid="stSidebar"] > div:first-child {
+    padding-top: 1.5rem !important;
+    padding-left: 1.2rem !important;
+    padding-right: 1.2rem !important;
 }
 
-[data-testid="stSidebar"] hr {
-    border-color: #1e293b !important;
+/* 侧边栏按钮胶囊化 */
+[data-testid="stSidebar"] .stButton > button {
+    border-radius: 12px !important;
+    font-size: 13.5px !important;
+    font-weight: 500 !important;
+    text-align: left !important;
+    justify-content: flex-start !important;
+    padding: 10px 14px !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    border: 1px solid transparent !important;
 }
 
-/* 空状态卡片 */
-.empty-state-box {
-    text-align: center;
-    padding: 48px 24px;
-    background: #f8fafc;
-    border: 1px dashed #cbd5e1;
-    border-radius: 12px;
-    margin: 20px 0;
+/* 非激活项 */
+[data-testid="stSidebar"] .stButton > button[kind="secondary"] {
+    background: transparent !important;
+    color: #4b5563 !important;
 }
-.empty-state-icon {
-    font-size: 40px;
-    color: #94a3b8;
+
+[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover {
+    background: rgba(0, 0, 0, 0.04) !important;
+    color: #111827 !important;
+}
+
+/* 激活选中项 (Apple White Floating Pill) */
+[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-weight: 600 !important;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03) !important;
+    border: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+
+/* =========================================================================
+   3. 顶部 Apple 胶囊全局筛选栏
+   ========================================================================= */
+.apple-filter-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 22px;
+}
+
+/* Streamlit 下拉选框美化 (Apple Segmented Look) */
+div[data-baseweb="select"] {
+    border-radius: 12px !important;
+    background: #ffffff !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+    transition: all 0.2s ease !important;
+}
+
+div[data-baseweb="select"]:hover {
+    border-color: rgba(0, 0, 0, 0.16) !important;
+}
+
+div[data-baseweb="select"] > div {
+    border-radius: 12px !important;
+    background: transparent !important;
+    border: none !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+}
+
+/* =========================================================================
+   4. Apple 级精修 KPI 卡片 (Pure White, Round, Subtle Glow)
+   ========================================================================= */
+.apple-kpi-card {
+    background: #ffffff;
+    border-radius: 18px;
+    padding: 22px 24px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03), 0 1px 3px rgba(0, 0, 0, 0.02);
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+    height: 100%;
+}
+
+.apple-kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05), 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+.apple-kpi-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 12px;
 }
-.empty-state-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #334155;
-    margin-bottom: 6px;
+
+.apple-kpi-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: #4b5563;
 }
-.empty-state-desc {
-    font-size: 13px;
-    color: #64748b;
-    max-width: 480px;
-    margin: 0 auto 16px auto;
-    line-height: 1.5;
+
+.apple-kpi-value {
+    font-size: 32px;
+    font-weight: 700;
+    color: #111827;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+}
+
+/* Apple 专属胶囊微徽章 */
+.apple-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.badge-apple-green {
+    background-color: #e6f7ed;
+    color: #00a854;
+}
+
+.badge-apple-red {
+    background-color: #feeceb;
+    color: #f5222d;
+}
+
+.badge-apple-blue {
+    background-color: #e8f2fe;
+    color: #0071e3;
+}
+
+.badge-apple-gray {
+    background-color: #f3f4f6;
+    color: #6b7280;
+}
+
+/* =========================================================================
+   5. Apple 白板容器卡片 (White Surface Container)
+   ========================================================================= */
+.apple-panel {
+    background: #ffffff;
+    border-radius: 20px;
+    padding: 24px 26px;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.03), 0 1px 3px rgba(0, 0, 0, 0.02);
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    margin-bottom: 20px;
+}
+
+.apple-panel-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* 数据表格与选项卡 Apple 化 */
+.stTabs [data-baseweb="tab-list"] {
+    background: #ebecef !important;
+    border-radius: 12px !important;
+    padding: 4px !important;
+    gap: 4px !important;
+    border-bottom: none !important;
+}
+
+.stTabs [data-baseweb="tab"] {
+    border-radius: 9px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    padding: 8px 16px !important;
+    border: none !important;
+    color: #6b7280 !important;
+}
+
+.stTabs [aria-selected="true"] {
+    background: #ffffff !important;
+    color: #111827 !important;
+    font-weight: 600 !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06) !important;
 }
 </style>
 """
