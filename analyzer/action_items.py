@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional, Tuple
+import re
 import pandas as pd
 from .metrics import summarize_overview
 from .campaign_health import analyze_campaign_health
@@ -101,13 +102,21 @@ def build_action_items(
 
         # P0 关键词该暂停
         for _, r in kw_dict["pause"].iterrows():
+            waste_val = 20.0
+            raw_str = str(r.get("依据数字", ""))
+            m_amt = re.search(r"\$([0-9.]+)", raw_str)
+            if m_amt:
+                try:
+                    waste_val = float(m_amt.group(1))
+                except Exception:
+                    waste_val = 20.0
             actions.append({
                 "优先级": "P0",
                 "动作类型": "暂停",
                 "操作对象": f"关键词: {r['关键词']} ({r['所在活动']})",
                 "现状数字": r["依据数字"],
                 "具体操作描述": f"已严重烧钱零产出，建议在活动中立即 pause 停投该关键词",
-                "_waste_amount": float(str(r["依据数字"]).split("$")[1].split("，")[0]) if "$" in str(r["依据数字"]) else 20.0,
+                "_waste_amount": waste_val,
             })
 
         # P1 关键词该降价

@@ -210,8 +210,57 @@ def clean_numeric_series_with_report(
 
     return cleaned, anomalies
 
+# // FIX: 智能识别文件日期范围与数据粒度 (支持多日期格式提取与粒度判定)
+def extract_file_date_and_granularity(filename: str, df: Optional[pd.DataFrame] = None) -> Tuple[str, str]:
+    """
+    智能识别文件日期与数据粒度：
+    - 日期识别：提取文件名中的 2026-10-01--2026-10-31 或 20261001-20261031 或 10.3--11.1
+    - 粒度识别：日度 (daily)、周度 (weekly)、月度 (monthly)、周期汇总 (period_summary)
+    """
+    fn = str(filename)
+    date_str = "全周期"
+    granularity = "period_summary"
+    
+    # 模式 A: 202X-XX-XX 到 202X-XX-XX
+    m_range = re.search(r"(\d{4}[-.]\d{1,2}[-.]\d{1,2})\s*[-~_到至]+\s*(\d{4}[-.]\d{1,2}[-.]\d{1,2})", fn)
+    if m_range:
+        date_str = f"{m_range.group(1)}~{m_range.group(2)}"
+        granularity = "period_summary"
+    else:
+        # 模式 B: 短月日如 10.3--11.1 或 10-03~11-01
+        m_short = re.search(r"(\d{1,2}[-.]\d{1,2})\s*[-~_到至]+\s*(\d{1,2}[-.]\d{1,2})", fn)
+        if m_short:
+            date_str = f"{m_short.group(1)}~{m_short.group(2)}"
+            granularity = "period_summary"
+        else:
+            # 模式 C: 单日如 2026-10-01 或 20261001
+            m_single = re.search(r"(\d{4}[-.]\d{1,2}[-.]\d{1,2})", fn)
+            if m_single:
+                date_str = m_single.group(1)
+                granularity = "daily"
+
+    # 若数据表内部存在日期明细列
+    if df is not None and not df.empty:
+        date_cols = [c for c in df.columns if any(k == str(c).strip().lower() for k in ["日期", "date", "day", "投放日期"])]
+        if date_cols:
+            d_series = df[date_cols[0]].dropna().astype(str).str.strip()
+            unique_dates = d_series.unique()
+            if len(unique_dates) > 1:
+                granularity = "daily"
+                try:
+                    sorted_d = sorted(unique_dates)
+                    date_str = f"{sorted_d[0]}~{sorted_d[-1]}"
+                except Exception:
+                    pass
+            elif len(unique_dates) == 1:
+                granularity = "daily"
+                date_str = str(unique_dates[0])
+
+    return date_str, granularity
+
+
 def parse_and_clean_table(
-    raw_df: pd.DataFrame, table_type: str
+    raw_df: pd.DataFrame, table_type: str, filename: str = ""
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     解析清洗单张报表：
@@ -311,6 +360,14 @@ def parse_and_clean_table(
         "anomalies": table_anomalies,
     }
 
+    # // FIX: 附加来源、平台、店铺、日期和数据粒度等统一架构元数据字段
+    date_str, granularity = extract_file_date_and_granularity(filename, detail_df)
+    detail_df["_source_file"] = filename
+    detail_df["_platform"] = "Walmart"
+    detail_df["_store"] = "默认店铺"
+    detail_df["_date"] = date_str
+    detail_df["_granularity"] = granularity
+
     detail_df.attrs["total_row"] = total_row
     detail_df.attrs["validation"] = validation_info
     detail_df.attrs["cleaning_anomalies"] = table_anomalies
@@ -372,7 +429,8 @@ def load_single_file(file_obj: Any) -> Tuple[Optional[str], Optional[pd.DataFram
         if not table_type:
             return None, None, {}
 
-    detail_df, total_row = parse_and_clean_table(raw_df, table_type)
+    # // FIX: 传入真实文件名，激活日期与数据粒度识别
+    detail_df, total_row = parse_and_clean_table(raw_df, table_type, filename=filename)
     return table_type, detail_df, total_row
 
 def merge_table_dfs(
@@ -394,16 +452,17 @@ def merge_table_dfs(
 
     combined = pd.concat(dfs, ignore_index=True)
 
+    # // FIX: 严密的多维度业务联合主键配置与日期联合去重
     pk_map = {
         "search_term": ["广告活动", "广告组", "搜索词"],
         "keyword": ["广告活动", "关键词", "匹配方式"],
         "campaign": ["广告活动"],
         "page_type": ["页面类型"],
         "platform": ["平台"],
-        "ad_item": ["项目ID"],
+        "ad_item": ["项目ID", "广告活动"] if "广告活动" in combined.columns else ["项目ID"],
     }
     base_pks = [c for c in pk_map.get(table_type, []) if c in combined.columns]
-    date_cols = [c for c in combined.columns if any(k in str(c).lower() for k in ["日期", "date", "周期", "天"])]
+    date_cols = [c for c in combined.columns if str(c).strip().lower() in ["日期", "date", "_date", "投放日期"]]
 
     if date_cols and base_pks:
         dedup_keys = base_pks + [date_cols[0]]

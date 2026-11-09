@@ -191,6 +191,7 @@ def inspect_data_quality(
         if isinstance(t_obj, dict) and "period_df" in t_obj:
             ad_item_df = t_obj["period_df"]
 
+    map_pct = 0.0
     if ad_item_df is not None and not ad_item_df.empty:
         id_col = None
         for cand in ["项目ID", "Item Id", "item_id", "商品ID"]:
@@ -244,27 +245,72 @@ def inspect_data_quality(
             "detail": f"已录入 {len(cost_dict)} 个 SKU 的采购/物流/佣金单位经济学参数",
         })
 
+    # 6. // FIX: 检测反常负数与真实零值指标
+    negative_anomalies = []
+    real_zero_count = 0
+    total_fields_seen = set()
+
+    for sec_name, t_df in active_sections.items():
+        if t_df is not None and isinstance(t_df, pd.DataFrame) and not t_df.empty:
+            total_fields_seen.update(t_df.columns)
+            for c in t_df.columns:
+                if any(k in str(c).lower() for k in ["花费", "销售额", "订单", "点击", "曝光"]):
+                    s_num = pd.to_numeric(t_df[c], errors="coerce")
+                    neg_cnt = int((s_num < 0).sum())
+                    if neg_cnt > 0:
+                        negative_anomalies.append(f"{sec_name}.{c} 出现 {neg_cnt} 处负数")
+                        penalties += 5
+                    real_zero_count += int((s_num == 0).sum())
+
     # 计算最终质量得分与置信度
     final_score = max(0, min(100, 100 - penalties))
     if final_score >= 85:
         confidence = "高置信度"
+        conf_level = "高"
+        grade = "优秀"
         status_text = "数据质量极佳，分析结论高度可信"
         guardrail = False
     elif final_score >= 60:
         confidence = "中置信度"
+        conf_level = "中"
+        grade = "良好"
         status_text = "数据基本完整，部分指标存在口径差异或缺少成本映射"
         guardrail = False
     else:
         confidence = "低置信度"
+        conf_level = "低"
+        grade = "需整改"
         status_text = "核心字段缺失或关键数据口径冲突，已激活安全熔断保护"
         guardrail = True
 
+    # // FIX: 构造符合前端渲染规范的 issues 缺陷列表
+    issues_list = []
+    for chk in checks:
+        if chk["level"] in ("WARN", "ERROR"):
+            issues_list.append({
+                "category": chk["table"],
+                "description": f"{chk['item']}: {chk['detail']}",
+                "remedy": "前往「数据中心」重新上传对齐报表或补录配置" if "成本" in chk["table"] or "映射" in chk["table"] else "检查领星导出时选定的日期与店铺范围",
+                "severity": chk["level"],
+            })
+
     return {
         "score": final_score,
+        "health_score": final_score,  # // FIX: 双字段对齐前端
         "confidence": confidence,
+        "confidence_level": conf_level,  # // FIX: 双字段对齐前端
+        "grade": grade,
         "status": status_text,
         "summary": f"数据质量评分: {final_score}/100（{confidence}）。已完成字段、格式、实体勾稽与口径全方位体检。",
         "checks": checks,
+        "issues": issues_list,  # // FIX: 输出结构化 issues 列表
+        "schema_integrity": {
+            "total_fields": len(total_fields_seen),
+            "valid_fields": list(total_fields_seen),
+        },
+        "negative_metrics": negative_anomalies,
+        "real_zeros_count": real_zero_count,
+        "sku_coverage_pct": round(map_pct, 1),
         "reconciliation": {
             "spends": total_spends_by_table,
             "orders": total_orders_by_table,

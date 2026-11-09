@@ -18,8 +18,9 @@ class TestSkuProfitModel(unittest.TestCase):
 
         buf = io.BytesIO(excel_bytes)
         buf.name = "sku_cost_template.xlsx"
-        cost_dict, err = load_sku_cost_table(buf)
+        cost_df, cost_dict, err = load_sku_cost_table(buf)
         self.assertIsNone(err)
+        self.assertFalse(cost_df.empty)
         self.assertIn("SKU-BED-001", cost_dict)
         info = cost_dict["SKU-BED-001"]
         # 采购 25 + 头程 12 + 尾程 18 + 包装 2 = 57.0
@@ -42,30 +43,37 @@ class TestSkuProfitModel(unittest.TestCase):
         }
 
         ad_df = pd.DataFrame({
-            "SKU": ["SKU-GOOD", "SKU-LOSS"],
-            "广告花费": [50.0, 100.0],
-            "总销售额": [500.0, 120.0],
-            "广告订单": [5, 1], # SKU-GOOD 客单价 100，SKU-LOSS 客单价 120
+            "SKU": ["SKU-GOOD", "SKU-LOSS", "SKU-NO-COST"],
+            "广告花费": [50.0, 100.0, 30.0],
+            "总销售额": [500.0, 120.0, 150.0],
+            "广告订单": [5, 1, 2],
         })
 
         profit_df, stats = calculate_sku_profit_analytics(ad_df, cost_dict)
-        self.assertEqual(len(profit_df), 2)
+        self.assertEqual(len(profit_df), 3)
 
         # SKU-GOOD: 客单价 100, 单位成本 47, 佣金 15 -> 单位广告前毛利 = 100 - 47 - 15 = 38
         # 总毛利 = 5 * 38 = 190. 广告花费 50 -> 广告后净利 = 190 - 50 = 140 > 0
         good_row = profit_df[profit_df["SKU"] == "SKU-GOOD"].iloc[0]
-        self.assertAlmostEqual(good_row["广告前毛利"], 190.0)
-        self.assertAlmostEqual(good_row["广告后真实净利"], 140.0)
-        self.assertIn("强力净盈利", good_row["盈利状态"])
+        self.assertAlmostEqual(good_row["广告前贡献利润"], 190.0)
+        self.assertAlmostEqual(good_row["广告后贡献利润"], 140.0)
+        self.assertIn("强力净盈利", good_row["盈利健康等级"])
 
         # SKU-LOSS: 客单价 120, 单位成本 95, 佣金 18 -> 单位广告前毛利 = 120 - 95 - 18 = 7
         # 总毛利 = 1 * 7 = 7. 广告花费 100 -> 广告后净利 = 7 - 100 = -93 < 0
         loss_row = profit_df[profit_df["SKU"] == "SKU-LOSS"].iloc[0]
-        self.assertAlmostEqual(loss_row["广告后真实净利"], -93.0)
-        self.assertIn("真实净亏损", loss_row["盈利状态"])
+        self.assertAlmostEqual(loss_row["广告后贡献利润"], -93.0)
+        self.assertIn("真实净亏损", loss_row["盈利健康等级"])
+
+        # SKU-NO-COST: 缺失关键成本，不伪造净利润，标记为成本缺失待补录
+        nocost_row = profit_df[profit_df["SKU"] == "SKU-NO-COST"].iloc[0]
+        self.assertEqual(nocost_row["成本真实性"], "成本缺失待补录")
+        self.assertTrue(pd.isna(nocost_row["广告前贡献利润"]))
+        self.assertTrue(pd.isna(nocost_row["广告后贡献利润"]))
 
         self.assertEqual(stats["profitable_sku_count"], 1)
         self.assertEqual(stats["loss_sku_count"], 1)
+        self.assertEqual(stats["missing_cost_sku_count"], 1)
 
 if __name__ == "__main__":
     unittest.main()

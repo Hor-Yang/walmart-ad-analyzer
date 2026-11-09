@@ -91,37 +91,121 @@ def clear_tracking_history() -> bool:
     except Exception:
         return False
 
-def generate_tracking_summary() -> Dict[str, Any]:
-    """生成效果追踪与模型迭代统计数据"""
+def update_action_status(action_id: str, new_status: str, actual_action: Optional[str] = None) -> bool:
+    """// FIX: 更新优化动作的执行状态 (待执行 -> 已执行 / 已忽略)"""
     records = load_tracking_history()
+    updated = False
+    for r in records:
+        if r.get("action_id") == action_id:
+            r["operator_status"] = new_status
+            if actual_action:
+                r["actual_action"] = actual_action
+            updated = True
+            break
+    if updated:
+        try:
+            with open(TRACKER_FILE, "wb") as f:
+                pickle.dump(records, f, protocol=pickle.HIGHEST_PROTOCOL)
+            return True
+        except Exception:
+            return False
+    return False
+
+
+def backfill_post_data(action_id: str, post_data: Dict[str, Any], outcome_evaluation: str, calibration_insight: str = "") -> bool:
+    """// FIX: 优化后数据回填与闭环效果评估"""
+    records = load_tracking_history()
+    updated = False
+    for r in records:
+        if r.get("action_id") == action_id:
+            r["post_data"] = post_data
+            r["outcome_evaluation"] = outcome_evaluation
+            if calibration_insight:
+                r["calibration_insight"] = calibration_insight
+            updated = True
+            break
+    if updated:
+        try:
+            with open(TRACKER_FILE, "wb") as f:
+                pickle.dump(records, f, protocol=pickle.HIGHEST_PROTOCOL)
+            return True
+        except Exception:
+            return False
+    return False
+
+
+# // FIX: 统一兼容历史参数传参 (history)，彻底移除硬编码百分比，动态根据真实记录计算
+def generate_tracking_summary(history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """生成效果追踪与模型迭代统计数据 (支持传入 history 列表或自动加载)"""
+    records = history if history is not None else load_tracking_history()
     if not records:
         return {
             "total_actions": 0,
             "pending_count": 0,
+            "pending_actions": 0,
             "validated_count": 0,
+            "validated_actions": 0,
+            "successful_actions": 0,
+            "success_rate_pct": 0.0,
             "success_rate": "0.0%",
+            "rule_calibrations": 0,
             "model_rule_stats": [],
             "records_df": pd.DataFrame(),
         }
 
     df = pd.DataFrame(records)
     total = len(df)
-    pending = len(df[df["outcome_evaluation"].str.contains("待")])
-    validated = total - pending
+    
+    # 动态统计状态
+    pending = 0
+    successful = 0
+    validated = 0
+    
+    for r in records:
+        status = str(r.get("operator_status", ""))
+        eval_str = str(r.get("outcome_evaluation", ""))
+        if "待" in eval_str or status in ("待执行", "建议执行"):
+            pending += 1
+        else:
+            validated += 1
+            if any(k in eval_str for k in ["达标", "成功", "改善", "盈利", "正向", "止血"]):
+                successful += 1
 
-    # 规则迭代有效性推断
-    rule_stats = [
-        {"rule_name": "🚨 零转化无效搜索词精准否定 (P0)", "sample_count": 28, "effectiveness": "96.4% 有效", "impact": "立竿见影停止失血，无误伤正常订单"},
-        {"rule_name": "📉 高 ACoS 关键词动态降价 (-20%)", "sample_count": 35, "effectiveness": "85.7% 有效", "impact": "平均拉低 CPC 18%，投产回升 0.6x"},
-        {"rule_name": "💎 优质高产词提拔单品精准组", "sample_count": 14, "effectiveness": "92.8% 有效", "impact": "精准收割高意图流量，销售贡献增长 32%"},
-        {"rule_name": "⚖️ 保本线与目标线双线解耦保护", "sample_count": 42, "effectiveness": "100.0% 有效", "impact": "彻底杜绝单品盲目加价导致的击穿毛利现象"},
-    ]
+    success_rate_pct = (successful / validated * 100.0) if validated > 0 else 0.0
+
+    # 动态规则效果汇总（基于真实记录统计，严禁硬编码虚假数据）
+    rule_map: Dict[str, Dict[str, Any]] = {}
+    for r in records:
+        dom = str(r.get("domain", "常规优化"))
+        if dom not in rule_map:
+            rule_map[dom] = {"sample_count": 0, "success_count": 0}
+        rule_map[dom]["sample_count"] += 1
+        eval_str = str(r.get("outcome_evaluation", ""))
+        if any(k in eval_str for k in ["达标", "成功", "改善", "盈利", "正向", "止血"]):
+            rule_map[dom]["success_count"] += 1
+
+    rule_stats = []
+    for r_name, stat in rule_map.items():
+        s_count = stat["sample_count"]
+        succ = stat["success_count"]
+        pct = (succ / s_count * 100.0) if s_count > 0 else 0.0
+        rule_stats.append({
+            "rule_name": r_name,
+            "sample_count": s_count,
+            "effectiveness": f"{pct:.1f}% 有效" if s_count > 0 else "待观察",
+            "impact": f"已累计追踪 {s_count} 项决策动作，成功验证 {succ} 项",
+        })
 
     return {
         "total_actions": total,
         "pending_count": pending,
+        "pending_actions": pending,
         "validated_count": validated,
-        "success_rate": f"{(total-pending)/total*100:.1f}%" if total > 0 else "0.0%",
+        "validated_actions": validated,
+        "successful_actions": successful,
+        "success_rate_pct": round(success_rate_pct, 1),
+        "success_rate": f"{success_rate_pct:.1f}%",
+        "rule_calibrations": len(rule_map),
         "model_rule_stats": rule_stats,
         "records_df": df,
     }

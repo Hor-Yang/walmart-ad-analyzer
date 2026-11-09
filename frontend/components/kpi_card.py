@@ -11,6 +11,29 @@ from typing import Optional, Union
 import streamlit as st
 
 
+def render_page_header(title: str, subtitle: str, badge: Optional[str] = None):
+    """
+    // FIX: 渲染全系统绝对统一的 Apple 极简标题区 (彻底移除散乱 Emoji，统一排版与层级)
+    """
+    safe_title = html.escape(str(title))
+    safe_sub = html.escape(str(subtitle))
+    badge_html = f'<span class="apple-badge badge-apple-blue" style="margin-left: 10px; font-size: 12px; vertical-align: middle;">{html.escape(str(badge))}</span>' if badge else ""
+    st.markdown(
+        f"""
+        <div style="margin-bottom: 24px;">
+            <div style="font-size: 26px; font-weight: 700; color: #1D1D1F; letter-spacing: -0.03em; margin-bottom: 4px; display: flex; align-items: center;">
+                <span>{safe_title}</span>
+                {badge_html}
+            </div>
+            <div style="font-size: 13.5px; color: #86868B; font-weight: 400;">
+                {safe_sub}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_apple_kpi_card(
     label: str,
     value: Union[str, int, float],
@@ -72,26 +95,94 @@ def render_kpi_card(
     )
 
 
+# 矢量 SVG 图标映射表 (Apple macOS / Lucide 统一纯净线条风格)
+_SVG_ICONS = {
+    "chart": """<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#86868B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="20" x2="12" y2="10"></line>
+        <line x1="18" y1="20" x2="18" y2="4"></line>
+        <line x1="6" y1="20" x2="6" y2="16"></line>
+    </svg>""",
+    "sales": """<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#86868B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="21" r="1"></circle>
+        <circle cx="19" cy="21" r="1"></circle>
+        <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"></path>
+    </svg>""",
+    "cart": """<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#86868B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="21" r="1"></circle>
+        <circle cx="19" cy="21" r="1"></circle>
+        <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"></path>
+    </svg>""",
+    "profit": """<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#86868B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path>
+        <path d="M12 18V6"></path>
+    </svg>""",
+    "dollar": """<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#86868B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path>
+        <path d="M12 18V6"></path>
+    </svg>""",
+    "inventory": """<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#86868B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m7.5 4.27 9 5.15"></path>
+        <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path>
+        <path d="m3.3 7 8.7 5 8.7-5"></path>
+        <path d="M12 22V12"></path>
+    </svg>""",
+    "box": """<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#86868B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m7.5 4.27 9 5.15"></path>
+        <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path>
+        <path d="m3.3 7 8.7 5 8.7-5"></path>
+        <path d="M12 22V12"></path>
+    </svg>""",
+    "products": """<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#86868B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"></path>
+        <path d="M7 7h.01"></path>
+    </svg>""",
+    "tag": """<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#86868B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"></path>
+        <path d="M7 7h.01"></path>
+    </svg>""",
+    "ai": """<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#86868B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3z"></path>
+    </svg>""",
+    "sparkles": """<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#86868B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3z"></path>
+    </svg>""",
+    "data": """<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#86868B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+        <path d="M3 5V19A9 3 0 0 0 21 19V5"></path>
+        <path d="M3 12A9 3 0 0 0 21 12"></path>
+    </svg>""",
+    "database": """<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#86868B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+        <path d="M3 5V19A9 3 0 0 0 21 19V5"></path>
+        <path d="M3 12A9 3 0 0 0 21 12"></path>
+    </svg>""",
+}
+
+
 def render_empty_state(
     title: str,
     description: str,
     icon_type: str = "chart",
     action_label: Optional[str] = None,
     action_key: Optional[str] = None,
+    *args,
+    **kwargs,
 ) -> bool:
-    """渲染 Apple 极简矢量风格的空数据引导状态（无生硬边框与 Emoji）"""
+    """// FIX: 渲染 Apple 极简单色矢量空状态，彻底移除散乱 Emoji，支持多类型单色 SVG"""
     safe_title = html.escape(str(title))
     safe_desc = html.escape(str(description))
+    
+    # 智能解析图标类型（防御性兼容传入的各类参数）
+    k_type = icon_type.lower() if isinstance(icon_type, str) else "chart"
+    svg_icon = _SVG_ICONS.get(k_type, _SVG_ICONS["chart"])
     
     st.markdown(
         f"""
         <div class="card" style="padding: 56px 24px; text-align: center; margin: 20px 0;">
             <div style="width: 54px; height: 54px; margin: 0 auto 16px auto; border-radius: 14px; background: #F5F5F7; display: flex; align-items: center; justify-content: center;">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#86868B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="12" y1="20" x2="12" y2="10"></line>
-                    <line x1="18" y1="20" x2="18" y2="4"></line>
-                    <line x1="6" y1="20" x2="6" y2="16"></line>
-                </svg>
+                {svg_icon}
             </div>
             <div style="font-size: 18px; font-weight: 600; color: #1D1D1F; margin-bottom: 6px; letter-spacing: -0.01em;">{safe_title}</div>
             <div style="font-size: 13.5px; color: #86868B; max-width: 440px; margin: 0 auto 22px auto; line-height: 1.6;">{safe_desc}</div>

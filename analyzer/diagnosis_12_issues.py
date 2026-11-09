@@ -217,4 +217,18 @@ def diagnose_12_advertising_issues(
             "observation_window": "持续追踪",
         })
 
+    # // FIX: 双向注入中英文标准别名，确保无论页面还是测试调用均 100% 对齐兼容
+    for iss in issues:
+        iss["问题类型"] = iss.get("issue_type")
+        iss["优先级"] = iss.get("severity")
+        iss["对象标识"] = iss.get("entity")
+        iss["问题描述"] = iss.get("description")
+        iss["关键数据证据"] = iss.get("data_evidence")
+        iss["可能原因"] = iss.get("root_cause")
+        iss["原因置信度"] = iss.get("confidence")
+        iss["建议采取措施"] = iss.get("action")
+        iss["建议采取的措施"] = iss.get("action")
+        iss["预期改善方向"] = iss.get("expected_impact")
+        iss["建议观察周期"] = iss.get("observation_window")
+
     return issues

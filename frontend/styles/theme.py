@@ -66,13 +66,17 @@ footer { visibility: hidden !important; display: none !important; }
 .stDeployButton { display: none !important; }
 [data-testid="stStatusWidget"] { display: none !important; }
 
-/* 头部透明化并保持穿透 */
+/* 头部透明化并保持穿透，同时确保侧边栏展开按钮始终可点击 */
 header[data-testid="stHeader"] {
     background: transparent !important;
     pointer-events: none !important;
     z-index: 99999 !important;
     display: flex !important;
     height: 48px !important;
+}
+
+header[data-testid="stHeader"] > * {
+    pointer-events: auto !important;
 }
 
 [data-testid="stToolbar"],
@@ -361,31 +365,49 @@ button[aria-label="Expand sidebar"]::after,
 }
 
 /* 注入 9 大核心业务模块单色矢量图标 (Lucide SVG Icons, 显式 stroke='black' 蒙版) */
-div[class*="st-key-nav_btn_dashboard"] button::before {
+div[class*="st-key-nav_btn_dashboard"] button::before,
+div[class*="nav_btn_dashboard"] button::before,
+button[key*="nav_btn_dashboard"]::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='7' height='9'/%3E%3Crect x='14' y='3' width='7' height='5'/%3E%3Crect x='14' y='12' width='7' height='9'/%3E%3Crect x='3' y='16' width='7' height='5'/%3E%3C/svg%3E") !important;
 }
-div[class*="st-key-nav_btn_ads_analytics"] button::before {
+div[class*="st-key-nav_btn_ads_analytics"] button::before,
+div[class*="nav_btn_ads_analytics"] button::before,
+button[key*="nav_btn_ads_analytics"]::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 11 18-5v12L3 14v-3z'/%3E%3Cpath d='M11.6 16.8a3 3 0 1 1-5.8-1.6'/%3E%3C/svg%3E") !important;
 }
-div[class*="st-key-nav_btn_sales_analytics"] button::before {
+div[class*="st-key-nav_btn_sales_analytics"] button::before,
+div[class*="nav_btn_sales_analytics"] button::before,
+button[key*="nav_btn_sales_analytics"]::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='21' r='1'/%3E%3Ccircle cx='19' cy='21' r='1'/%3E%3Cpath d='M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12'/%3E%3C/svg%3E") !important;
 }
-div[class*="st-key-nav_btn_inventory"] button::before {
+div[class*="st-key-nav_btn_inventory"] button::before,
+div[class*="nav_btn_inventory"] button::before,
+button[key*="nav_btn_inventory"]::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7.5 4.27 9 5.15'/%3E%3Cpath d='M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z'/%3E%3Cpath d='m3.3 7 8.7 5 8.7-5'/%3E%3Cpath d='M12 22V12'/%3E%3C/svg%3E") !important;
 }
-div[class*="st-key-nav_btn_products"] button::before {
+div[class*="st-key-nav_btn_products"] button::before,
+div[class*="nav_btn_products"] button::before,
+button[key*="nav_btn_products"]::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z'/%3E%3Cpath d='M7 7h.01'/%3E%3C/svg%3E") !important;
 }
-div[class*="st-key-nav_btn_profitability"] button::before {
+div[class*="st-key-nav_btn_profitability"] button::before,
+div[class*="nav_btn_profitability"] button::before,
+button[key*="nav_btn_profitability"]::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8'/%3E%3Cpath d='M12 18V6'/%3E%3C/svg%3E") !important;
 }
-div[class*="st-key-nav_btn_ai_intelligence"] button::before {
+div[class*="st-key-nav_btn_ai_intelligence"] button::before,
+div[class*="nav_btn_ai_intelligence"] button::before,
+button[key*="nav_btn_ai_intelligence"]::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3z'/%3E%3C/svg%3E") !important;
 }
-div[class*="st-key-nav_btn_data_hub"] button::before {
+div[class*="st-key-nav_btn_data_hub"] button::before,
+div[class*="nav_btn_data_hub"] button::before,
+button[key*="nav_btn_data_hub"]::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cellipse cx='12' cy='5' rx='9' ry='3'/%3E%3Cpath d='M3 5V19A9 3 0 0 0 21 19V5'/%3E%3Cpath d='M3 12A9 3 0 0 0 21 12'/%3E%3C/svg%3E") !important;
 }
-div[class*="st-key-nav_btn_settings"] button::before {
+div[class*="st-key-nav_btn_settings"] button::before,
+div[class*="nav_btn_settings"] button::before,
+button[key*="nav_btn_settings"]::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='4' x2='20' y1='21' y2='21'/%3E%3Cline x1='4' x2='20' y1='14' y2='14'/%3E%3Cline x1='4' x2='20' y1='7' y2='7'/%3E%3Ccircle cx='14' cy='21' r='2'/%3E%3Ccircle cx='8' cy='14' r='2'/%3E%3Ccircle cx='16' cy='7' r='2'/%3E%3C/svg%3E") !important;
 }
 

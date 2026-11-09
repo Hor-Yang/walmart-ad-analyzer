@@ -6,14 +6,13 @@
 import streamlit as st
 import pandas as pd
 from data_loader.session_storage import clear_session_cache
-from frontend.components.kpi_card import render_kpi_card
+from frontend.components.kpi_card import render_kpi_card, render_page_header
 
 
 def render_settings_view():
-    st.markdown("## ⚙️ 系统设置 (System Settings)")
-    st.caption("跨平台 API 连接配置、多店铺授权、多币种汇率、时区偏好与本地会话缓存维护")
+    render_page_header("系统设置", "跨平台对接配置、数据治理规则、成本核算基准与系统会话重置")
 
-    set_tabs = st.tabs(["🌐 平台渠道与店铺配置", "💱 货币与时区参数", "🧹 数据与缓存管理"])
+    set_tabs = st.tabs(["渠道与店铺配置", "货币与时区参数", "数据与会话管理"])
 
     # =========================================================================
     # TAB 1: 平台渠道配置
@@ -21,11 +20,11 @@ def render_settings_view():
     with set_tabs[0]:
         st.markdown("#### 1. 跨境电商平台直连接口状态")
         channels_df = pd.DataFrame([
-            {"平台名称": "Walmart 美国站", "对接模式": "报表适配器 (Active)", "默认币种": "USD", "连接状态": "🟢 正常运转", "最后同步": "刚刚"},
-            {"平台名称": "Wayfair", "对接模式": "API / 报表 (Ready)", "默认币种": "USD", "连接状态": "🟡 联调准备", "最后同步": "待配置"},
-            {"平台名称": "eBay", "对接模式": "API / 报表 (Ready)", "默认币种": "USD / EUR", "连接状态": "⚪ 待接入", "最后同步": "-"},
-            {"平台名称": "Shein 半托管", "对接模式": "全托管/半托管适配器", "默认币种": "USD", "连接状态": "⚪ 待接入", "最后同步": "-"},
-            {"平台名称": "Temu 半托管", "对接模式": "半托管商家端适配器", "默认币种": "USD", "连接状态": "⚪ 待接入", "最后同步": "-"},
+            {"平台名称": "Walmart 美国站", "对接模式": "报表适配器 (Active)", "默认币种": "USD", "连接状态": "正常运转", "最后同步": "刚刚"},
+            {"平台名称": "Wayfair", "对接模式": "API / 报表 (Ready)", "默认币种": "USD", "连接状态": "联调准备", "最后同步": "待配置"},
+            {"平台名称": "eBay", "对接模式": "API / 报表 (Ready)", "默认币种": "USD / EUR", "连接状态": "待接入", "最后同步": "-"},
+            {"平台名称": "Shein 半托管", "对接模式": "全托管/半托管适配器", "默认币种": "USD", "连接状态": "待接入", "最后同步": "-"},
+            {"平台名称": "Temu 半托管", "对接模式": "半托管商家端适配器", "默认币种": "USD", "连接状态": "待接入", "最后同步": "-"},
         ])
         st.dataframe(channels_df, use_container_width=True, hide_index=True)
 
@@ -47,12 +46,12 @@ def render_settings_view():
     # =========================================================================
     with set_tabs[2]:
         st.markdown("#### 3. 会话数据持久化与缓存清理")
-        st.warning("⚠️ 清除本地会话缓存将重置当前浏览器存储的所有临时报表，需重新上传才能恢复分析。")
+        st.warning("清除本地会话缓存将重置当前浏览器存储的所有临时报表，需重新上传才能恢复分析。")
         
-        if st.button("🚨 清空所有板块缓存并重置系统", key="reset_cache_btn", type="primary"):
+        if st.button("清空所有板块缓存并重置系统", key="reset_cache_btn", type="primary"):
             clear_session_cache()
             for key in ["section_data", "section_files", "section_file_bytes", "daily_trend_df", "sku_cost_df", "sku_cost_dict", "sku_mapping", "trend_files"]:
                 if key in st.session_state:
                     del st.session_state[key]
-            st.success("✅ 缓存已彻底清空！页面将在 2 秒内刷新重置。")
+            st.success("缓存已彻底清空！页面将在 2 秒内刷新重置。")
             st.rerun()

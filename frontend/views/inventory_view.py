@@ -5,29 +5,24 @@
 
 import streamlit as st
 import pandas as pd
-from frontend.components.kpi_card import render_kpi_card, render_empty_state
+from frontend.components.kpi_card import render_kpi_card, render_empty_state, render_page_header
 from frontend.utils.formatters import safe_num_divide
 
 
 def render_inventory_view():
-    st.markdown("## 📦 库存管理 (Inventory Management)")
-    st.caption("全链路仓储供应链监控：平台仓、第三方海外仓、国内在途海运与断货风险联动")
+    render_page_header("库存管理", "全链路仓储供应链监控：平台仓、第三方海外仓、国内在途海运与断货风险联动")
 
     sec_data = st.session_state.get("section_data", {})
     item_df = sec_data.get("ad_item")
+    inventory_df = sec_data.get("inventory") or st.session_state.get("inventory_df")
 
-    # 构建统一库存模型表（结合广告/商品中的真实 SKU 动态推演，不伪造脱节数据）
-    skus_found = []
-    if item_df is not None and not item_df.empty:
-        sku_col = "sku" if "sku" in item_df.columns else "item_id"
-        skus_found = list(item_df[sku_col].dropna().unique())
-
-    if not skus_found:
+    # // FIX: 彻底移除模拟库存生成逻辑！没有真实库存数据时，必须展示空状态
+    if inventory_df is None or not isinstance(inventory_df, pd.DataFrame) or inventory_df.empty:
         render_empty_state(
-            title="暂无库存快照数据",
-            description="系统尚未绑定商品库存快照或在途数据表。请在「数据中心」上传「库存及海外仓快照」以开启智能周转监控与断货保护。",
-            icon="📦",
-            action_label="👉 前往数据中心上传库存表",
+            title="暂无真实库存快照数据",
+            description="系统尚未导入商品在库或在途真实报表。为确保经营决策严肃性，系统已彻底禁用基于公式的模拟虚假库存推演。请在「数据中心」上传真实的「库存快照表」以开启周转监控与断货预警。",
+            icon_type="inventory",
+            action_label="前往数据中心上传库存表",
             action_key="inv_to_dh_btn",
         )
         if st.session_state.get("inv_to_dh_btn"):
@@ -35,41 +30,40 @@ def render_inventory_view():
             st.rerun()
         return
 
-    # 基于商品销售出单量计算日均销量与动态预估周转
-    sku_stats = item_df.groupby(sku_col).agg({
-        "订单量": "sum" if "订单量" in item_df.columns else "count",
-        "花费": "sum" if "花费" in item_df.columns else "count",
-    }).reset_index()
+    # 基于真实导入的库存数据解析各仓与周转
+    sku_col = next((c for c in ["SKU", "sku", "商品SKU", "Item ID", "项目ID"] if c in inventory_df.columns), inventory_df.columns[0])
+    avail_col = next((c for c in ["可用库存", "总可用在库", "平台仓可用", "available_stock", "现货", "在库"] if c in inventory_df.columns), None)
+    transit_col = next((c for c in ["在途", "在途海运", "在途库存", "in_transit", "海快在途"] if c in inventory_df.columns), None)
+
+    # 结合广告出单量计算日均出单速度
+    velocity_map = {}
+    if item_df is not None and not item_df.empty:
+        item_sku_c = next((c for c in ["SKU", "sku", "项目ID", "item_id"] if c in item_df.columns), None)
+        item_ord_c = next((c for c in ["广告订单", "订单量", "订单", "orders"] if c in item_df.columns), None)
+        if item_sku_c and item_ord_c:
+            v_agg = item_df.groupby(item_sku_c)[item_ord_c].sum().to_dict()
+            velocity_map = {str(k).split('.')[0].strip(): float(v)/30.0 for k, v in v_agg.items()}
 
     inv_records = []
-    for _, row in sku_stats.iterrows():
-        s = str(row[sku_col])
-        orders = float(row.get("订单量", 0))
-        # 预估最近30天日均销量 (Velocity)
-        daily_velocity = round(orders / 30.0, 1) if orders > 0 else 0.5
-        # 基础可售库存推演（若无外部库存导入，给予基于出单密度的合理健康基准）
-        avail_stock = int(daily_velocity * 45)  # 默认45天合理库存
-        in_transit = int(daily_velocity * 30)   # 默认30天在途
+    for _, row in inventory_df.iterrows():
+        s = str(row[sku_col]).split('.')[0].strip()
+        avail_stock = int(pd.to_numeric(row[avail_col], errors="coerce")) if avail_col else 0
+        in_transit = int(pd.to_numeric(row[transit_col], errors="coerce")) if transit_col else 0
+        daily_velocity = round(velocity_map.get(s, 0.0), 2)
         days_of_supply = round(avail_stock / daily_velocity, 0) if daily_velocity > 0 else 999
 
         status = "健康充足"
-        status_color = "green"
         if days_of_supply < 15:
-            status = "🚨 极度濒危"
-            status_color = "red"
+            status = "极度濒危"
         elif days_of_supply < 25:
-            status = "⚠️ 补货预警"
-            status_color = "amber"
+            status = "补货预警"
         elif days_of_supply > 90:
-            status = "📦 呆滞积压"
-            status_color = "slate"
+            status = "呆滞积压"
 
         inv_records.append({
             "SKU": s,
-            "平台仓可用": int(avail_stock * 0.7),
-            "第三方海外仓": int(avail_stock * 0.3),
-            "在途海运": in_transit,
             "总可用在库": avail_stock,
+            "在途海运": in_transit,
             "日均销量 (件/天)": daily_velocity,
             "预估可售天数 (DOS)": int(days_of_supply),
             "库存健康状态": status,
@@ -98,12 +92,17 @@ def render_inventory_view():
     st.markdown("---")
 
     # 2. 详细库存台账与联动保护
-    st.markdown("#### 📋 各 SKU 实时库存快照与智能补货建议")
+    st.markdown("#### 各 SKU 实时库存快照与智能补货建议")
     st.markdown(
         """
-        > [!TIP] 跨模块联动保护：广告 × 库存
-        > 当某款 SKU 的**预估可售天数低于 15 天**时，AI 决策中枢将自动发出拦截指令：**「禁止加大广告出价或拓词放量」**，防止产生断货后导致 Listing 权重断崖式下跌。
-        """
+        <div class="card" style="padding: 16px 20px; margin-bottom: 16px; background: #F8F9FA;">
+            <div style="font-weight: 600; font-size: 13.5px; color: #1D1D1F; margin-bottom: 4px;">跨模块联动保护：广告 × 库存</div>
+            <div style="font-size: 12.5px; color: #86868B; line-height: 1.6;">
+                当某款 SKU 的<strong>预估可售天数低于 15 天</strong>时，AI 决策中枢将自动发出拦截指令：<strong>「禁止加大广告出价或拓词放量」</strong>，防止断货导致 Listing 权重断崖式下跌。
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
     st.dataframe(
         inv_df,

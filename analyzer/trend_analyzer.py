@@ -69,13 +69,20 @@ HEADER_MAPPING = {
 }
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """自动将中英文列名标准化为系统统一列名"""
+    """// FIX: 自动将中英文列名标准化为系统统一列名，并自动消除重复列名以防止 DataFrame.str 报错"""
     col_map = {}
+    seen_targets = set()
     for col in df.columns:
         norm_key = str(col).strip().lower().replace(" ", "").replace("_", "").replace("-", "")
         if norm_key in HEADER_MAPPING:
-            col_map[col] = HEADER_MAPPING[norm_key]
-    return df.rename(columns=col_map)
+            target = HEADER_MAPPING[norm_key]
+            if target not in seen_targets and target not in df.columns:
+                col_map[col] = target
+                seen_targets.add(target)
+    out = df.rename(columns=col_map)
+    if out.columns.duplicated().any():
+        out = out.loc[:, ~out.columns.duplicated()]
+    return out
 
 def parse_date_series(series: pd.Series) -> pd.Series:
     """
@@ -136,7 +143,8 @@ def build_sku_trend_data(
         date_col = None
         for cand in ["日期", "统计时间", "时间", "Date", "date", "数据日期", "天"]:
             if cand in df_norm.columns:
-                valid_vals = df_norm[cand].dropna().astype(str).str.strip()
+                target_col = df_norm[cand].iloc[:, 0] if isinstance(df_norm[cand], pd.DataFrame) else df_norm[cand]
+                valid_vals = target_col.dropna().astype(str).str.strip()
                 valid_vals = valid_vals[~valid_vals.isin(["-", ""])]
                 if len(valid_vals) > 0:
                     date_col = cand
@@ -144,7 +152,8 @@ def build_sku_trend_data(
 
         df_copy = df_norm.copy()
         if date_col:
-            df_copy["周期"] = parse_date_series(df_copy[date_col])
+            d_col_data = df_copy[date_col].iloc[:, 0] if isinstance(df_copy[date_col], pd.DataFrame) else df_copy[date_col]
+            df_copy["周期"] = parse_date_series(d_col_data)
         else:
             df_copy["周期"] = period_lbl
 

@@ -36,18 +36,17 @@ from analyzer.sku_profit_model import (
 )
 from analyzer.data_quality import inspect_data_quality
 from frontend.utils.data_context import parse_single_file_cached, update_section
-from frontend.components.kpi_card import render_kpi_card, render_empty_state
+from frontend.components.kpi_card import render_kpi_card, render_empty_state, render_page_header
 
 
 def render_data_hub_view():
-    st.markdown("## 🗄️ 数据中心 (Data Hub)")
-    st.caption("统一数据接入与资产管理中枢：报表上传、模板下载、智能字段对齐、质量体检与审计日志")
+    render_page_header("数据中心", "多源业务报表导入流水线、跨平台标准底表模板与数据质量体检中枢")
 
     dh_tabs = st.tabs([
-        "📥 统一报表上传中枢",
-        "📑 标准模板下载与配置",
-        "🩺 数据质量体检报告",
-        "📜 数据导入审计日志",
+        "报表智能上传",
+        "标准底表模板",
+        "数据质量体检",
+        "导入审计台账",
     ])
 
     sec_data = st.session_state.get("section_data", {})
@@ -75,7 +74,7 @@ def render_data_hub_view():
                     update_section(t_type, df, bf.name, f_bytes)
                     success_count += 1
             if success_count > 0:
-                st.success(f"🎉 批量解析完成！成功识别并载入 {success_count} 张业务报表。")
+                st.success(f"批量解析完成！成功识别并载入 {success_count} 张业务报表。")
                 st.rerun()
 
         st.markdown("---")
@@ -133,19 +132,19 @@ def render_data_hub_view():
                     st.rerun()
 
     # =========================================================================
-    # TAB 2: 📑 标准模板下载与配置
+    # TAB 2: 标准模板下载与配置
     # =========================================================================
     with dh_tabs[1]:
-        st.markdown("#### 📑 跨平台经营标准模板库")
+        st.markdown("#### 跨平台经营标准模板库")
         st.caption("下载标准数据底表模板，填入商品属性与成本要素后上传生效：")
 
         t1, t2, t3 = st.columns(3)
         with t1:
             st.markdown(
                 """
-                <div class="kpi-card">
-                    <div class="kpi-title"><span>🏷️ Item ID ↔ SKU 映射模板</span></div>
-                    <div style="font-size: 13px; color: #64748b; margin: 8px 0;">
+                <div class="card" style="padding: 20px; height: 100%;">
+                    <div style="font-size: 15px; font-weight: 600; color: #1D1D1F; margin-bottom: 6px;">Item ID ↔ SKU 映射模板</div>
+                    <div style="font-size: 13px; color: #86868B; line-height: 1.5;">
                         打通各平台数字 ID 与企业统一主 SKU 编码，消除未命名商品。
                     </div>
                 </div>
@@ -154,7 +153,7 @@ def render_data_hub_view():
             )
             sku_tmpl_bytes = generate_sku_template()
             st.download_button(
-                "📥 下载 SKU 映射表模板",
+                "下载 SKU 映射表模板",
                 data=sku_tmpl_bytes,
                 file_name="sku_mapping_template.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -162,8 +161,11 @@ def render_data_hub_view():
             )
             f_sku_up = st.file_uploader("上传已填写的 SKU 映射表", type=["xlsx", "xls", "csv"], key="dh_sku_map_up")
             if f_sku_up:
-                new_map = load_sku_mapping(f_sku_up)
-                if new_map:
+                # // FIX: 严密解构 (new_map, err) 元组，防止类型错误
+                new_map, err = load_sku_mapping(f_sku_up)
+                if err:
+                    st.error(f"SKU 映射表解析失败: {err}")
+                elif new_map:
                     st.session_state["sku_mapping"].update(new_map)
                     st.success(f"已成功载入 {len(new_map)} 条映射记录！")
                     st.rerun()
@@ -171,9 +173,9 @@ def render_data_hub_view():
         with t2:
             st.markdown(
                 """
-                <div class="kpi-card">
-                    <div class="kpi-title"><span>💰 SKU 供应链成本表模板</span></div>
-                    <div style="font-size: 13px; color: #64748b; margin: 8px 0;">
+                <div class="card" style="padding: 20px; height: 100%;">
+                    <div style="font-size: 15px; font-weight: 600; color: #1D1D1F; margin-bottom: 6px;">SKU 供应链成本表模板</div>
+                    <div style="font-size: 13px; color: #86868B; line-height: 1.5;">
                         包含采购价、头程海运、尾程履约和平台佣金，用于动态保本线计算。
                     </div>
                 </div>
@@ -182,7 +184,7 @@ def render_data_hub_view():
             )
             cost_tmpl_bytes = generate_sku_cost_template()
             st.download_button(
-                "📥 下载 SKU 成本底表模板",
+                "下载 SKU 成本底表模板",
                 data=cost_tmpl_bytes,
                 file_name="sku_cost_template.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -190,8 +192,11 @@ def render_data_hub_view():
             )
             f_cost_up = st.file_uploader("上传已填写的成本底表", type=["xlsx", "xls", "csv"], key="dh_cost_table_up")
             if f_cost_up:
-                c_df, c_dict = load_sku_cost_table(f_cost_up)
-                if not c_df.empty:
+                # // FIX: 严格对齐 (cost_df, cost_dict, error_msg) 三元组返回
+                c_df, c_dict, c_err = load_sku_cost_table(f_cost_up)
+                if c_err:
+                    st.error(f"成本底表解析失败: {c_err}")
+                elif not c_df.empty:
                     st.session_state["sku_cost_df"] = c_df
                     st.session_state["sku_cost_dict"] = c_dict
                     st.success(f"已成功载入 {len(c_df)} 款商品成本参数！")
@@ -200,9 +205,9 @@ def render_data_hub_view():
         with t3:
             st.markdown(
                 """
-                <div class="kpi-card">
-                    <div class="kpi-title"><span>📈 每日多期走势报表模板</span></div>
-                    <div style="font-size: 13px; color: #64748b; margin: 8px 0;">
+                <div class="card" style="padding: 20px; height: 100%;">
+                    <div style="font-size: 15px; font-weight: 600; color: #1D1D1F; margin-bottom: 6px;">每日多期走势报表模板</div>
+                    <div style="font-size: 13px; color: #86868B; line-height: 1.5;">
                         日度级别销售与花费走势，支持按自然日精准环比与归因。
                     </div>
                 </div>
@@ -211,7 +216,7 @@ def render_data_hub_view():
             )
             daily_tmpl_bytes = generate_daily_trend_template()
             st.download_button(
-                "📥 下载日度趋势报表模板",
+                "下载日度趋势报表模板",
                 data=daily_tmpl_bytes,
                 file_name="daily_trend_template.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -226,38 +231,78 @@ def render_data_hub_view():
                     st.rerun()
 
     # =========================================================================
-    # TAB 3: 🩺 数据质量体检报告 (Layer 1)
+    # TAB 3: 数据质量体检报告 (Layer 1)
     # =========================================================================
     with dh_tabs[2]:
-        st.markdown("#### 🩺 数据质量体检指数 (Data Quality Index)")
-        st.caption("检查字段完整性、数据类型、真实零与缺失值区分、跨表支出对齐及决策可信度：")
+        st.markdown("#### 数据质量体检指数 (Data Quality Index)")
+        st.caption("检查字段完整性、数据类型、真实零与缺失值区分、跨表支出对齐及决策置信度与熔断防护：")
 
+        # // FIX: 严格对齐数据质量引擎输出字段与页面展示
         q_res = inspect_data_quality(sec_data)
         h_score = q_res.get("health_score", 100)
         grade = q_res.get("grade", "良好")
         conf_level = q_res.get("confidence_level", "高")
+        sku_cov = q_res.get("sku_coverage_pct", 100.0)
+        guardrail = q_res.get("guardrail_active", False)
+        real_zeros = q_res.get("real_zeros_count", 0)
+        neg_metrics = q_res.get("negative_metrics", [])
         issues = q_res.get("issues", [])
 
-        q1, q2, q3 = st.columns(3)
+        q1, q2, q3, q4 = st.columns(4)
         with q1:
             render_kpi_card("数据健康综合评分", f"{h_score} 分", sub_title=f"健康等级: {grade}", badge=grade, badge_color="green" if h_score>=80 else "amber")
         with q2:
-            render_kpi_card("AI 决策建议可信度", f"{conf_level} 置信度", sub_title="依据数据样本完整性自动评级", badge=conf_level, badge_color="blue")
+            render_kpi_card("AI 决策置信度", f"{conf_level} 置信", sub_title="依据数据样本完整性自动评级", badge=conf_level, badge_color="blue")
         with q3:
-            render_kpi_card("已对齐有效字段", f"{q_res.get('schema_integrity', {}).get('total_fields', 0)} 个", sub_title="覆盖各平台核心指标")
+            render_kpi_card("SKU 编码对齐率", f"{sku_cov:.1f}%", sub_title="商品映射覆盖比例", badge=f"{sku_cov:.0f}%", badge_color="green" if sku_cov>=85 else "amber")
+        with q4:
+            g_txt = "决策熔断触发" if guardrail else "熔断防护待命"
+            g_badge = "red" if guardrail else "green"
+            render_kpi_card("决策熔断状态", g_txt, sub_title="异常数据自动拦截盲目调价", badge="熔断保护", badge_color=g_badge)
+
+        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+        m1, m2 = st.columns(2)
+        with m1:
+            st.markdown(
+                f"""
+                <div class="card" style="padding: 16px;">
+                    <div style="font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 6px;">真实零值与负数异常检测</div>
+                    <div style="font-size: 12.5px; color: #64748b; line-height: 1.6;">
+                        • <strong>真实零值 (Real Zeros)：</strong> 已识别 {real_zeros} 处真实 0 出单/曝光节点（非缺失，业务真实表现）<br/>
+                        • <strong>负数指标检测：</strong> 发现 {len(neg_metrics)} 处负数异常指标（已自动清洗纠偏）<br/>
+                        • <strong>字段对齐数：</strong> {q_res.get('schema_integrity', {}).get('total_fields', 0)} 个核心业务字段
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with m2:
+            st.markdown(
+                f"""
+                <div class="card" style="padding: 16px;">
+                    <div style="font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 6px;">跨表数据勾稽与一致性</div>
+                    <div style="font-size: 12.5px; color: #64748b; line-height: 1.6;">
+                        • <strong>多表花费对齐：</strong> 广告活动、投放词与商品报表总消耗勾稽比对<br/>
+                        • <strong>联合主键去重：</strong> 项目ID/广告活动 复合主键保留最新版本<br/>
+                        • <strong>来源溯源跟踪：</strong> 每行数据均携带来源文件与时间戳元数据
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
         if issues:
-            st.markdown("##### ⚠️ 发现的数据缺陷提示")
+            st.markdown("##### 发现的数据缺陷提示与修复指引")
             for iss in issues:
                 st.warning(f"• **[{iss.get('category')}]** {iss.get('description')} (建议措施: {iss.get('remedy')})")
         else:
-            st.success("🎉 数据源体检良好，所有字段与指标对齐一致，未发现断层或恶意缺失。")
+            st.success("数据源体检良好，所有字段与指标对齐一致，未发现断层或恶意缺失。")
 
     # =========================================================================
-    # TAB 4: 📜 数据导入审计日志
+    # TAB 4: 数据导入审计日志
     # =========================================================================
     with dh_tabs[3]:
-        st.markdown("#### 📜 报表导入审计台账 (Audit Trail)")
+        st.markdown("#### 报表导入审计台账 (Audit Trail)")
         st.caption("防丢失机制：系统会自动记录每一次上传的文件名、解析时间、数据行数与状态流水。")
         
         audit_logs = get_upload_audit_logs()
@@ -265,10 +310,10 @@ def render_data_hub_view():
             st.dataframe(pd.DataFrame(audit_logs), use_container_width=True, hide_index=True)
             log_md = generate_audit_log_markdown()
             st.download_button(
-                "📥 导出完整审计日志 (Markdown)",
+                "导出完整审计日志 (Markdown)",
                 data=log_md,
                 file_name="data_import_audit_logs.md",
                 mime="text/markdown",
             )
         else:
-            st.info("💡 暂无上传流水。本次会话新上传的文件将即时展示在此处。")
+            st.info("暂无上传流水。本次会话新上传的文件将即时展示在此处。")

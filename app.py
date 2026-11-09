@@ -16,9 +16,10 @@ if str(ROOT_DIR) not in sys.path:
 import streamlit as st
 
 # 1. 页面基础全局配置
+favicon_path = os.path.join(ROOT_DIR, "assets", "favicon.svg")
 st.set_page_config(
     page_title="CrossBorder BI · 跨境电商智能经营分析工作台",
-    page_icon="🌐",
+    page_icon=favicon_path if os.path.exists(favicon_path) else None,
     layout="wide",
     initial_sidebar_state="expanded",
 )

@@ -49,7 +49,7 @@ from frontend.utils.data_context import (
     parse_trend_data_cached,
     update_section,
 )
-from frontend.components.kpi_card import render_empty_state
+from frontend.components.kpi_card import render_empty_state, render_page_header
 
 
 def safe_html(val) -> str:
@@ -59,8 +59,8 @@ def safe_html(val) -> str:
 
 
 def render_ads_view():
-    st.markdown("## 📢 广告分析 (Ads Analytics)")
-    st.caption("全渠道广告多维诊断：漏斗分析、精准控词、竞价阶梯、商品健康度与位置溢价优化")
+    # 统一 Apple macOS 标题规范
+    render_page_header("广告分析", "全渠道广告多维诊断：漏斗分析、精准控词、竞价阶梯、商品健康度与位置溢价优化")
 
     # 1. 顶部平台切换器与参数微调
     p_col1, p_col2, p_col3 = st.columns([2, 1, 1])
@@ -81,8 +81,8 @@ def render_ads_view():
     if "Walmart" not in sel_ad_platform:
         render_empty_state(
             title=f"{sel_ad_platform} 广告数据对接中",
-            description=f"当前系统正在配置 {sel_ad_platform} 的 API 与报表适配器。目前已接入 Walmart 广告引擎，请切换回 Walmart 查看完整的广告分析体系。",
-            icon="🔌",
+            description=f"当前系统正在配置 {sel_ad_platform} 的报表适配器。目前已接入 Walmart 广告引擎，请切换回 Walmart 查看完整的广告分析体系。",
+            icon_type="chart",
         )
         return
 
@@ -91,24 +91,24 @@ def render_ads_view():
     daily_trend_df = st.session_state.get("daily_trend_df")
     trend_files = st.session_state.get("trend_files", [])
 
-    # 2. 广告核心二级子业务 Tab 体系
+    # 2. 广告核心二级子业务 Tab 体系 (统一纯净文字，无彩色 Emoji)
     ad_tabs = st.tabs([
-        "🎯 统一智能决策中枢",
-        "📊 概览与全店漏斗",
-        "🏷️ 广告活动健康度",
-        "🔍 搜索词挖掘与控词",
-        "🎯 关键词出价诊断",
-        "📦 商品广告表现",
-        "📈 多期走势与归因",
-        "🏬 店铺矩阵分析",
-        "📱 广告位置分析",
+        "智能决策中枢",
+        "全店漏斗",
+        "活动健康度",
+        "搜索词挖掘",
+        "关键词出价",
+        "商品广告",
+        "多期走势",
+        "店铺矩阵",
+        "展示位置",
     ])
 
     # =========================================================================
-    # TAB 1: 🎯 统一智能决策中枢 (AdDecisionEngine)
+    # TAB 1: 统一智能决策中枢 (AdDecisionEngine)
     # =========================================================================
     with ad_tabs[0]:
-        st.markdown("### 🎯 统一智能决策中枢（4 层广告决策与防冲突引擎）")
+        st.markdown("### 统一智能决策中枢（4 层广告决策与防冲突引擎）")
         st.caption("数据层清洗对齐 -> 专家规则并发评估 -> 冲突仲裁与动作去重 -> 最终结构化决策指令矩阵。")
 
         active_tables = {k: sec_data.get(k) for k in [
@@ -123,8 +123,8 @@ def render_ads_view():
             render_empty_state(
                 title="暂无广告数据",
                 description="请在「数据中心」上传广告活动列表、搜索词列表或多期走势报表，系统将自动激活统一决策引擎。",
-                icon="💡",
-                action_label="👉 前往数据中心上传报表",
+                icon_type="chart",
+                action_label="前往数据中心上传报表",
                 action_key="ads_to_dh_btn",
             )
             if st.session_state.get("ads_to_dh_btn"):
@@ -144,15 +144,15 @@ def render_ads_view():
             render_kpi_row(overview, title="当前广告账户综合汇总表现")
 
             # 沃尔玛广告总监三大核心经营决策
-            st.markdown("#### 🎯 沃尔玛广告总监 · 核心决策直达")
+            st.markdown("#### 沃尔玛广告总监 · 核心决策直达")
             c_prob = exec_sum.get("core_problem_answer", "大盘运行稳定。")
             st.markdown(
                 f"""
-                <div style="background: #fff1f2; border: 1px solid #fecdd3; border-left: 5px solid #e11d48; border-radius: 8px; padding: 14px 18px; margin-bottom: 14px;">
-                    <div style="font-weight: 700; font-size: 14px; color: #9f1239; margin-bottom: 4px;">
-                        ❓ 核心痛点诊断：
+                <div style="background: rgba(255, 59, 48, 0.05); border: 1px solid rgba(255, 59, 48, 0.15); border-radius: 12px; padding: 14px 18px; margin-bottom: 14px;">
+                    <div style="font-weight: 600; font-size: 13.5px; color: #DC2626; margin-bottom: 4px;">
+                        核心痛点诊断
                     </div>
-                    <div style="font-size: 13.5px; color: #881337; line-height: 1.5;">
+                    <div style="font-size: 13.5px; color: #1D1D1F; line-height: 1.5;">
                         {safe_html(c_prob)}
                     </div>
                 </div>
@@ -161,17 +161,17 @@ def render_ads_view():
             )
 
             # 结构化决策清单
-            st.markdown("##### 📋 全量结构化决策执行指令矩阵")
+            st.markdown("##### 全量结构化决策执行指令矩阵")
             if not dec_matrix.empty:
                 st.dataframe(dec_matrix, use_container_width=True, hide_index=True)
             else:
                 st.info("当前数据未触发明确调优阈值，请继续观察。")
 
     # =========================================================================
-    # TAB 2: 📊 概览与全店漏斗
+    # TAB 2: 概览与全店漏斗
     # =========================================================================
     with ad_tabs[1]:
-        st.markdown("### 📊 广告全店漏斗与宏观指标")
+        st.markdown("### 广告全店漏斗与宏观指标")
         active_tables = {k: sec_data.get(k) for k in ["campaign", "search_term", "keyword", "ad_item", "platform", "page_type"]}
         overview = summarize_overview(active_tables)
         render_kpi_row(overview)
@@ -192,10 +192,10 @@ def render_ads_view():
             st.plotly_chart(fig, use_container_width=True)
 
     # =========================================================================
-    # TAB 3: 🏷️ 广告活动健康度
+    # TAB 3: 广告活动健康度
     # =========================================================================
     with ad_tabs[2]:
-        st.markdown("### 🏷️ 广告活动（Campaign）健康度与预算撞顶诊断")
+        st.markdown("### 广告活动（Campaign）健康度与预算撞顶诊断")
         camp_df = sec_data.get("campaign")
         if camp_df is not None and not camp_df.empty:
             health_res = analyze_campaign_health(camp_df, target_acos=target_acos)
@@ -210,13 +210,13 @@ def render_ads_view():
                 summary_df = pd.DataFrame()
             st.dataframe(summary_df, use_container_width=True, hide_index=True)
         else:
-            st.info("💡 请在「数据中心」上传「① 广告活动报表」以查看活动健康度。")
+            st.info("请在「数据中心」上传「① 广告活动报表」以查看活动健康度。")
 
     # =========================================================================
-    # TAB 4: 🔍 搜索词挖掘与控词
+    # TAB 4: 搜索词挖掘与控词
     # =========================================================================
     with ad_tabs[3]:
-        st.markdown("### 🔍 搜索词挖掘与精准控词清单")
+        st.markdown("### 搜索词挖掘与精准控词清单")
         st_df = sec_data.get("search_term")
         if st_df is not None and not st_df.empty:
             st_res = mine_search_terms(st_df, target_acos=target_acos)
@@ -230,19 +230,19 @@ def render_ads_view():
             else:
                 neg_df, exp_df = pd.DataFrame(), pd.DataFrame()
             
-            s_t1, s_t2 = st.tabs([f"🚫 建议否定词清单 ({len(neg_df)}个)", f"💎 建议拓词清单 ({len(exp_df)}个)"])
+            s_t1, s_t2 = st.tabs([f"建议否定词清单 ({len(neg_df)})", f"建议拓词清单 ({len(exp_df)})"])
             with s_t1:
                 st.dataframe(neg_df, use_container_width=True, hide_index=True)
             with s_t2:
                 st.dataframe(exp_df, use_container_width=True, hide_index=True)
         else:
-            st.info("💡 请在「数据中心」上传「② 搜索词报表」以挖掘否定词与拓词。")
+            st.info("请在「数据中心」上传「② 搜索词报表」以挖掘否定词与拓词。")
 
     # =========================================================================
-    # TAB 5: 🎯 关键词出价诊断
+    # TAB 5: 关键词出价诊断
     # =========================================================================
     with ad_tabs[4]:
-        st.markdown("### 🎯 投放关键词（Keyword）竞价与阶梯调价")
+        st.markdown("### 投放关键词（Keyword）竞价与阶梯调价")
         kw_df = sec_data.get("keyword")
         if kw_df is not None and not kw_df.empty:
             kw_res = analyze_keyword_bids(kw_df, target_acos=target_acos)
@@ -257,13 +257,13 @@ def render_ads_view():
                 detail_df = pd.DataFrame()
             st.dataframe(detail_df, use_container_width=True, hide_index=True)
         else:
-            st.info("💡 请在「数据中心」上传「③ 关键词报表」以查看关键词出价诊断。")
+            st.info("请在「数据中心」上传「③ 关键词报表」以查看关键词出价诊断。")
 
     # =========================================================================
-    # TAB 6: 📦 商品广告表现
+    # TAB 6: 商品广告表现
     # =========================================================================
     with ad_tabs[5]:
-        st.markdown("### 📦 商品广告（Ad Item）表现与僵尸款识别")
+        st.markdown("### 商品广告（Ad Item）表现与僵尸款识别")
         item_df = sec_data.get("ad_item")
         if item_df is not None and not item_df.empty:
             # // FIX: 移除不存在的 target_acos 参数，传入匹配字典 sku_map
@@ -275,10 +275,10 @@ def render_ads_view():
             abnormal = item_res.get("abnormal_items", pd.DataFrame()) if isinstance(item_res, dict) else pd.DataFrame()
 
             it_t1, it_t2, it_t3, it_t4 = st.tabs([
-                f"🏆 跑量商品 TOP10 ({len(top10)})",
-                f"🔥 烧钱高损款 ({len(burning)})",
-                f"⚡ 建议提价款 ({len(low_bid)})",
-                f"⚠️ 异常状态排查 ({len(abnormal)})",
+                f"跑量商品 TOP10 ({len(top10)})",
+                f"高消耗待优化款 ({len(burning)})",
+                f"建议调价增益款 ({len(low_bid)})",
+                f"异常状态排查 ({len(abnormal)})",
             ])
             with it_t1:
                 st.dataframe(top10, use_container_width=True, hide_index=True)
@@ -289,13 +289,13 @@ def render_ads_view():
             with it_t4:
                 st.dataframe(abnormal, use_container_width=True, hide_index=True)
         else:
-            st.info("💡 请在「数据中心」上传「④ 商品广告列表」以分析各 SKU 表现。")
+            st.info("请在「数据中心」上传「④ 商品广告列表」以分析各 SKU 表现。")
 
     # =========================================================================
-    # TAB 7: 📈 多期走势与归因
+    # TAB 7: 多期走势与归因
     # =========================================================================
     with ad_tabs[6]:
-        st.markdown("### 📈 SKU / 全周期多期走势与归因分析")
+        st.markdown("### SKU / 全周期多期走势与归因分析")
         if trend_files:
             file_records_tuple = tuple((f["filename"], f["bytes"]) for f in trend_files)
             sku_summary_df, period_sku_df, anomalies, daily_macro = parse_trend_data_cached(
@@ -311,13 +311,13 @@ def render_ads_view():
         elif daily_trend_df is not None and not daily_trend_df.empty:
             st.dataframe(daily_trend_df.head(50), use_container_width=True, hide_index=True)
         else:
-            st.info("💡 请在「数据中心」上传「多期趋势报表」或「日度走势报表」。")
+            st.info("请在「数据中心」上传「多期趋势报表」或「日度走势报表」。")
 
     # =========================================================================
-    # TAB 8: 🏬 店铺矩阵分析
+    # TAB 8: 店铺矩阵分析
     # =========================================================================
     with ad_tabs[7]:
-        st.markdown("### 🏬 4 象限商品矩阵与全店经营")
+        st.markdown("### 4 象限商品矩阵与全店经营")
         camp_df = sec_data.get("campaign")
         item_df = sec_data.get("ad_item")
         if camp_df is not None and not camp_df.empty:
@@ -333,13 +333,13 @@ def render_ads_view():
                 matrix_df = pd.DataFrame()
             st.dataframe(matrix_df, use_container_width=True, hide_index=True)
         else:
-            st.info("💡 请在「数据中心」上传「① 广告活动报表」以生成店铺矩阵。")
+            st.info("请在「数据中心」上传「① 广告活动报表」以生成店铺矩阵。")
 
     # =========================================================================
-    # TAB 9: 📱 广告位置分析
+    # TAB 9: 广告位置分析
     # =========================================================================
     with ad_tabs[8]:
-        st.markdown("### 📱 广告位置与设备终端（Platform & Page Type）表现")
+        st.markdown("### 广告位置与设备终端（Platform & Page Type）表现")
         plat_df = sec_data.get("platform")
         page_df = sec_data.get("page_type")
         if plat_df is not None or page_df is not None:
@@ -351,4 +351,4 @@ def render_ads_view():
                 st.markdown("#### 页面类型表现")
                 st.dataframe(plc_res["page_type_df"], use_container_width=True, hide_index=True)
         else:
-            st.info("💡 请在「数据中心」上传「⑤ 平台报表」或「⑥ 页面类型报表」以分析展示位置溢价。")
+            st.info("请在「数据中心」上传「⑤ 平台报表」或「⑥ 页面类型报表」以分析展示位置溢价。")

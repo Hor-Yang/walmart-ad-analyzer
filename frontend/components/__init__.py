@@ -1,6 +1,6 @@
 from .navigation import render_sidebar_navigation, NAV_MODULES
 from .filter_bar import render_global_filter_bar
-from .kpi_card import render_kpi_card, render_apple_kpi_card, render_empty_state
+from .kpi_card import render_kpi_card, render_apple_kpi_card, render_empty_state, render_page_header
 
 __all__ = [
     "render_sidebar_navigation",
@@ -9,4 +9,5 @@ __all__ = [
     "render_kpi_card",
     "render_apple_kpi_card",
     "render_empty_state",
+    "render_page_header",
 ]

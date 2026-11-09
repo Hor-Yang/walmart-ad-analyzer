@@ -99,7 +99,8 @@ def render_global_filter_bar(available_skus: list = None, available_categories: 
                 unsafe_allow_html=True,
             )
         with r_c2:
-            if st.button("🔄", key="gf_refresh_icon_btn", help="刷新并重置时间", use_container_width=True):
+            # // FIX: 彻底移除原始 Emoji 图标 🔄，替换为 Apple 规范轻量级刷新按钮
+            if st.button("刷新", key="gf_refresh_icon_btn", help="刷新分析并更新时间戳", use_container_width=True):
                 filters["last_sync"] = datetime.now().strftime("%Y-%m-%d %H:%M")
                 st.rerun()
 
