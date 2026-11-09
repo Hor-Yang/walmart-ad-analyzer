@@ -35,22 +35,39 @@ def render_dashboard_view():
     camp_df = sec_data.get("campaign")
     item_df = sec_data.get("ad_item")
 
-    # 提取真实可用数据
-    total_spend = 0.0
-    total_ad_sales = 0.0
-    total_orders = 0
+    # // FIX: 提取真实可用数据，优先使用统一宏观指标汇总，兼容广告花费、总销售额等各类中英文规范列名
+    try:
+        from analyzer.metrics import summarize_overview
+        overview = summarize_overview(sec_data) if sec_data else {}
+    except Exception:
+        overview = {}
 
-    if camp_df is not None and not camp_df.empty:
-        total_spend = float(camp_df["花费"].sum()) if "花费" in camp_df.columns else 0.0
-        total_ad_sales = float(camp_df["销售额"].sum()) if "销售额" in camp_df.columns else 0.0
-        total_orders = int(camp_df["订单量"].sum()) if "订单量" in camp_df.columns else 0
+    total_spend = float(overview.get("大盘总花费") or 0.0)
+    total_ad_sales = float(overview.get("总销售额") or 0.0)
+    total_orders = int(overview.get("总订单") or 0)
+
+    # // FIX: 兜底扫描：若当前报表未被 overview 直接提取，全表泛化兼容统计
+    if total_spend == 0.0 and total_ad_sales == 0.0:
+        for t_name, df_cand in sec_data.items():
+            if df_cand is not None and isinstance(df_cand, pd.DataFrame) and not df_cand.empty:
+                sp_c = next((c for c in ["广告花费", "花费", "spend", "cost", "总花费"] if c in df_cand.columns), None)
+                sl_c = next((c for c in ["总销售额", "销售额", "sales", "attributed sales", "广告销售额"] if c in df_cand.columns), None)
+                od_c = next((c for c in ["广告订单", "订单", "订单量", "orders", "order"] if c in df_cand.columns), None)
+                if sp_c:
+                    total_spend = max(total_spend, float(pd.to_numeric(df_cand[sp_c], errors="coerce").fillna(0).sum()))
+                if sl_c:
+                    total_ad_sales = max(total_ad_sales, float(pd.to_numeric(df_cand[sl_c], errors="coerce").fillna(0).sum()))
+                if od_c:
+                    total_orders = max(total_orders, int(pd.to_numeric(df_cand[od_c], errors="coerce").fillna(0).sum()))
 
     gross_sales = total_ad_sales
     if daily_trend_df is not None and not daily_trend_df.empty:
-        if "销售额" in daily_trend_df.columns:
-            gross_sales = max(gross_sales, float(pd.to_numeric(daily_trend_df["销售额"], errors="coerce").sum()))
-        if "订单量" in daily_trend_df.columns:
-            total_orders = max(total_orders, int(pd.to_numeric(daily_trend_df["订单量"], errors="coerce").sum()))
+        sl_c = next((c for c in ["销售额", "总销售额", "sales"] if c in daily_trend_df.columns), None)
+        od_c = next((c for c in ["订单量", "广告订单", "订单", "orders"] if c in daily_trend_df.columns), None)
+        if sl_c:
+            gross_sales = max(gross_sales, float(pd.to_numeric(daily_trend_df[sl_c], errors="coerce").sum()))
+        if od_c:
+            total_orders = max(total_orders, int(pd.to_numeric(daily_trend_df[od_c], errors="coerce").sum()))
 
     has_real_data = (total_spend > 0) or (gross_sales > 0)
 

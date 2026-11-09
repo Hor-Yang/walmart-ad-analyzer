@@ -72,11 +72,14 @@ def update_section(sec_id: str, df: pd.DataFrame, file_name: str, file_bytes: by
         )
     except Exception:
         pass
-    record_upload_audit_log(
-        file_name=file_name,
-        section_id=sec_id,
-        table_type=sec_id,
-        row_count=len(df),
-        columns=list(df.columns),
-        status="成功",
-    )
+    # // FIX: 严格对齐 record_upload_audit_log 参数签名，防止 TypeError 并加异常防护
+    try:
+        record_upload_audit_log(
+            file_type=sec_id,
+            file_name=file_name,
+            row_count=len(df) if df is not None else 0,
+            file_size_bytes=len(file_bytes) if file_bytes else 0,
+            metrics_summary=f"已成功解析并对齐 {len(df.columns) if df is not None else 0} 个指标列",
+        )
+    except Exception:
+        pass

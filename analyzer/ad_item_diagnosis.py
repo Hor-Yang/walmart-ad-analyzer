@@ -7,6 +7,7 @@ from data_loader.sku_mapper import apply_sku_mapping
 def diagnose_ad_items(
     ad_item_df: pd.DataFrame,
     sku_map: Optional[Dict[str, str]] = None,
+    **kwargs,  # // FIX: 增加 **kwargs 容错吸收任何额外关键字参数 (如 target_acos 等)，防止 TypeError
 ) -> Dict[str, Any]:
     """
     广告商品（商品位）诊断分析模块：

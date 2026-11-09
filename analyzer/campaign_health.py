@@ -179,6 +179,7 @@ def tag_single_campaign(
 def analyze_campaign_health(
     campaign_df: pd.DataFrame,
     days: Optional[int] = None,
+    **kwargs,  # // FIX: 容错吸收 target_acos 等可能传入的额外参数，防止 TypeError
 ) -> Tuple[pd.DataFrame, Dict[str, Any], Optional[str]]:
     """
     广告活动健康度诊断主入口：

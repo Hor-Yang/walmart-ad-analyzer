@@ -199,7 +199,16 @@ def render_ads_view():
         camp_df = sec_data.get("campaign")
         if camp_df is not None and not camp_df.empty:
             health_res = analyze_campaign_health(camp_df, target_acos=target_acos)
-            st.dataframe(health_res.get("summary_df", pd.DataFrame()), use_container_width=True, hide_index=True)
+            # // FIX: 兼容 analyze_campaign_health 返回元组 (result_df, inactive_summary, budget_notice)，避免 AttributeError
+            if isinstance(health_res, tuple):
+                summary_df = health_res[0] if len(health_res) > 0 and isinstance(health_res[0], pd.DataFrame) else pd.DataFrame()
+            elif isinstance(health_res, dict):
+                summary_df = health_res.get("summary_df", pd.DataFrame())
+            elif isinstance(health_res, pd.DataFrame):
+                summary_df = health_res
+            else:
+                summary_df = pd.DataFrame()
+            st.dataframe(summary_df, use_container_width=True, hide_index=True)
         else:
             st.info("💡 请在「数据中心」上传「① 广告活动报表」以查看活动健康度。")
 
@@ -211,8 +220,15 @@ def render_ads_view():
         st_df = sec_data.get("search_term")
         if st_df is not None and not st_df.empty:
             st_res = mine_search_terms(st_df, target_acos=target_acos)
-            neg_df = st_res.get("negative_candidates", pd.DataFrame())
-            exp_df = st_res.get("expansion_candidates", pd.DataFrame())
+            # // FIX: 兼容 mine_search_terms 返回元组 (neg_df, mining_df, high_clicks, stats)，避免 AttributeError
+            if isinstance(st_res, tuple):
+                neg_df = st_res[0] if len(st_res) > 0 and isinstance(st_res[0], pd.DataFrame) else pd.DataFrame()
+                exp_df = st_res[1] if len(st_res) > 1 and isinstance(st_res[1], pd.DataFrame) else pd.DataFrame()
+            elif isinstance(st_res, dict):
+                neg_df = st_res.get("negative_candidates", pd.DataFrame())
+                exp_df = st_res.get("expansion_candidates", pd.DataFrame())
+            else:
+                neg_df, exp_df = pd.DataFrame(), pd.DataFrame()
             
             s_t1, s_t2 = st.tabs([f"🚫 建议否定词清单 ({len(neg_df)}个)", f"💎 建议拓词清单 ({len(exp_df)}个)"])
             with s_t1:
@@ -230,7 +246,16 @@ def render_ads_view():
         kw_df = sec_data.get("keyword")
         if kw_df is not None and not kw_df.empty:
             kw_res = analyze_keyword_bids(kw_df, target_acos=target_acos)
-            st.dataframe(kw_res.get("detail_df", pd.DataFrame()), use_container_width=True, hide_index=True)
+            # // FIX: analyze_keyword_bids 返回 (groups, merged_df, stats) 元组，提取 merged_df 明细表，彻底修复 AttributeError
+            if isinstance(kw_res, tuple):
+                detail_df = kw_res[1] if len(kw_res) > 1 and isinstance(kw_res[1], pd.DataFrame) else (kw_res[0] if isinstance(kw_res[0], pd.DataFrame) else pd.DataFrame())
+            elif isinstance(kw_res, dict):
+                detail_df = kw_res.get("detail_df", pd.DataFrame())
+            elif isinstance(kw_res, pd.DataFrame):
+                detail_df = kw_res
+            else:
+                detail_df = pd.DataFrame()
+            st.dataframe(detail_df, use_container_width=True, hide_index=True)
         else:
             st.info("💡 请在「数据中心」上传「③ 关键词报表」以查看关键词出价诊断。")
 
@@ -241,8 +266,28 @@ def render_ads_view():
         st.markdown("### 📦 商品广告（Ad Item）表现与僵尸款识别")
         item_df = sec_data.get("ad_item")
         if item_df is not None and not item_df.empty:
-            item_res = diagnose_ad_items(item_df, target_acos=target_acos)
-            st.dataframe(item_res.get("detail_df", pd.DataFrame()), use_container_width=True, hide_index=True)
+            # // FIX: 移除不存在的 target_acos 参数，传入匹配字典 sku_map
+            item_res = diagnose_ad_items(item_df, sku_map=sku_mapping)
+            # // FIX: 解构 diagnose_ad_items 返回的多维字典，分卡片与 Tab 结构化呈现
+            top10 = item_res.get("top10_items", pd.DataFrame()) if isinstance(item_res, dict) else pd.DataFrame()
+            burning = item_res.get("burning_items", pd.DataFrame()) if isinstance(item_res, dict) else pd.DataFrame()
+            low_bid = item_res.get("low_bid_items", pd.DataFrame()) if isinstance(item_res, dict) else pd.DataFrame()
+            abnormal = item_res.get("abnormal_items", pd.DataFrame()) if isinstance(item_res, dict) else pd.DataFrame()
+
+            it_t1, it_t2, it_t3, it_t4 = st.tabs([
+                f"🏆 跑量商品 TOP10 ({len(top10)})",
+                f"🔥 烧钱高损款 ({len(burning)})",
+                f"⚡ 建议提价款 ({len(low_bid)})",
+                f"⚠️ 异常状态排查 ({len(abnormal)})",
+            ])
+            with it_t1:
+                st.dataframe(top10, use_container_width=True, hide_index=True)
+            with it_t2:
+                st.dataframe(burning, use_container_width=True, hide_index=True)
+            with it_t3:
+                st.dataframe(low_bid, use_container_width=True, hide_index=True)
+            with it_t4:
+                st.dataframe(abnormal, use_container_width=True, hide_index=True)
         else:
             st.info("💡 请在「数据中心」上传「④ 商品广告列表」以分析各 SKU 表现。")
 
@@ -277,7 +322,16 @@ def render_ads_view():
         item_df = sec_data.get("ad_item")
         if camp_df is not None and not camp_df.empty:
             matrix_res = generate_product_matrix_analysis(item_df if item_df is not None else camp_df)
-            st.dataframe(matrix_res.get("matrix_df", pd.DataFrame()), use_container_width=True, hide_index=True)
+            # // FIX: generate_product_matrix_analysis 返回 dict 包含 items 列表，安全转为 DataFrame
+            if isinstance(matrix_res, dict) and "items" in matrix_res:
+                matrix_df = pd.DataFrame(matrix_res["items"])
+            elif isinstance(matrix_res, dict) and "matrix_df" in matrix_res:
+                matrix_df = matrix_res["matrix_df"]
+            elif isinstance(matrix_res, pd.DataFrame):
+                matrix_df = matrix_res
+            else:
+                matrix_df = pd.DataFrame()
+            st.dataframe(matrix_df, use_container_width=True, hide_index=True)
         else:
             st.info("💡 请在「数据中心」上传「① 广告活动报表」以生成店铺矩阵。")
 

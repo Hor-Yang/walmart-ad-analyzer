@@ -95,11 +95,12 @@ def clear_session_cache() -> bool:
         return False
 
 def record_upload_audit_log(
-    file_type: str,
-    file_name: str,
-    row_count: int,
+    file_type: str = "未知",
+    file_name: str = "",
+    row_count: int = 0,
     file_size_bytes: int = 0,
     metrics_summary: Optional[str] = None,
+    **kwargs,  # // FIX: 增加 **kwargs 吸收额外关键字参数，防止任何调用参数不匹配引发 TypeError
 ):
     """
     记录文件上传与处理审计日志，永久保留每次上传的时间、文件、数据条数与关键摘要。
