@@ -1,11 +1,9 @@
 """
 经营总览首页 (Dashboard View - Apple Design Edition)
-汲取 Apple 设计语言精髓：
-1. 页面标题：优雅 SF Pro 风格排版
-2. 4 大核心 KPI 卡片：销售额、广告支出、广告产出比 (ROAS)、库存周转天数
-3. 下方双卡片联动：
-   - 左侧：销售与广告趋势 (平滑样条双波浪曲线与半透明渐变面积图)
-   - 右侧：多平台广告表现 (厚环优雅甜甜圈图 Donut Chart)
+遵循 Apple macOS 极简高端规范：
+1. 容器：全量使用统一 .card 样式 (border-radius: 16px, background: #FFFFFF, 弥散阴影, 呼吸感 Padding 24px)
+2. 图表去噪：隐藏繁杂网格与多余边框，使用平滑样条曲线 (Spline)
+3. 文本与排版：标题 #1D1D1F，说明文字 #86868B，单色微图标
 """
 
 import streamlit as st
@@ -17,14 +15,14 @@ from frontend.utils.formatters import safe_num_divide, fmt_money
 
 
 def render_dashboard_view():
-    # 1. 页面主标题
+    # 1. 页面主标题区 (Apple 极简大排版)
     st.markdown(
         """
         <div style="margin-bottom: 24px;">
-            <div style="font-size: 26px; font-weight: 700; color: #111827; letter-spacing: -0.03em; margin-bottom: 4px;">
+            <div style="font-size: 26px; font-weight: 700; color: #1D1D1F; letter-spacing: -0.03em; margin-bottom: 4px;">
                 经营总览
             </div>
-            <div style="font-size: 13.5px; color: #86868b; font-weight: 400;">
+            <div style="font-size: 13.5px; color: #86868B; font-weight: 400;">
                 跨平台全链路经营大盘：销售、广告、利润、库存实时穿透与异常预警
             </div>
         </div>
@@ -56,17 +54,19 @@ def render_dashboard_view():
 
     has_real_data = (total_spend > 0) or (gross_sales > 0)
 
-    # 若未上传数据，展示友好引导横幅，并使用美观的业务基准数据进行展示
+    # 状态提示条：采用优雅单色 SVG 代替彩色 Emoji
     if not has_real_data:
         st.markdown(
             """
-            <div style="background: rgba(0, 113, 227, 0.05); border: 1px solid rgba(0, 113, 227, 0.15); border-radius: 14px; padding: 12px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 18px;">💡</span>
-                    <span style="font-size: 13px; color: #1e3a8a; font-weight: 500;">
-                        当前展示系统预设基准看板。前往「数据中心」上传您的店铺报表，即可实时点亮真实数据。
-                    </span>
-                </div>
+            <div style="background: #E8F2FE; border-radius: 12px; padding: 12px 18px; margin-bottom: 22px; display: flex; align-items: center; gap: 10px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0071E3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <span style="font-size: 13px; color: #0071E3; font-weight: 500;">
+                    当前展示系统预设基准看板。在「数据中心」上传店铺报表后，大盘将自动实时同步真实业务数据。
+                </span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -89,7 +89,7 @@ def render_dashboard_view():
         roas_badge = ("达标" if display_roas >= 3.0 else "偏低", "green" if display_roas >= 3.0 else "red")
         dos_badge = ("正常", "green")
 
-    # 2. 核心 4 大 Apple KPI 卡片 (1:1 还原参考图)
+    # 2. 核心 4 大 Apple KPI 卡片 (统一 .card 样式，纯白、圆角 16px、呼吸感留白)
     k_col1, k_col2, k_col3, k_col4 = st.columns(4)
 
     with k_col1:
@@ -124,26 +124,26 @@ def render_dashboard_view():
             badge_type=dos_badge[1],
         )
 
-    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
-    # 3. 下方双图表卡片 (左侧 2/3 趋势面积图 + 右侧 1/3 甜甜圈图)
+    # 3. 下方双卡片联动 (统一 .card 类，去噪图表)
     c_left, c_right = st.columns([1.8, 1.0])
 
     with c_left:
         st.markdown(
             """
-            <div class="apple-panel">
-                <div class="apple-panel-title">
+            <div class="card">
+                <div class="card-title">
                     <span>销售与广告趋势</span>
-                    <span style="font-size: 12px; font-weight: 500; color: #86868b; background: #f5f6f8; padding: 4px 10px; border-radius: 8px;">
-                        30 days ⌵
+                    <span style="font-size: 12px; font-weight: 500; color: #86868B; background: #F5F5F7; padding: 4px 10px; border-radius: 8px;">
+                        30 days
                     </span>
                 </div>
             """,
             unsafe_allow_html=True,
         )
 
-        # 构造平滑样条双波浪图 (Apple 风格平滑三次样条曲线)
+        # 构造平滑样条双波浪图 (图表去噪规范：移除冗余网格，移除图表自带生硬边框)
         days = list(range(1, 31))
         if has_real_data and daily_trend_df is not None and not daily_trend_df.empty and "日期" in daily_trend_df.columns:
             d_sort = daily_trend_df.copy()
@@ -156,7 +156,6 @@ def render_dashboard_view():
             y_sales = list(d_grouped["销售额"])
             y_ads = list(d_grouped["花费"])
         else:
-            # 优雅波浪生成算法
             x_vals = [f"{d:02d}" for d in days]
             base_sales = np.sin(np.linspace(0, 3 * np.pi, 30)) * 40 + 120 + np.random.normal(0, 3, 30)
             y_sales = [max(20, round(float(v), 1)) for v in base_sales]
@@ -165,50 +164,58 @@ def render_dashboard_view():
 
         fig_trend = go.Figure()
 
-        # 底部微型条形指示器
+        # 底部微型条形指示器 (淡化去噪)
         fig_trend.add_trace(go.Bar(
             x=x_vals,
             y=[s * 0.15 for s in y_sales],
-            name="基准活跃度",
-            marker_color="#e5e7eb",
-            opacity=0.6,
+            name="活跃度",
+            marker_color="#F3F4F6",
+            opacity=0.7,
             hoverinfo="skip",
         ))
 
-        # 销售额面积平滑曲线 (Apple Blue Wave)
+        # 销售额面积平滑曲线 (Apple 蓝)
         fig_trend.add_trace(go.Scatter(
             x=x_vals,
             y=y_sales,
             name="销售额",
             mode="lines+markers",
-            line=dict(shape="spline", smoothing=1.3, color="#0071e3", width=2.8),
-            marker=dict(size=5, color="#ffffff", line=dict(color="#0071e3", width=2)),
+            line=dict(shape="spline", smoothing=1.3, color="#0071E3", width=2.5),
+            marker=dict(size=4, color="#FFFFFF", line=dict(color="#0071E3", width=2)),
             fill="tozeroy",
-            fillcolor="rgba(0, 113, 227, 0.08)",
+            fillcolor="rgba(0, 113, 227, 0.06)",
         ))
 
-        # 广告支出平滑曲线 (Apple Mint Green Wave)
+        # 广告支出平滑曲线 (Apple 薄荷绿)
         fig_trend.add_trace(go.Scatter(
             x=x_vals,
             y=y_ads,
             name="广告支出",
             mode="lines+markers",
-            line=dict(shape="spline", smoothing=1.3, color="#34c759", width=2.5),
-            marker=dict(size=5, color="#ffffff", line=dict(color="#34c759", width=2)),
+            line=dict(shape="spline", smoothing=1.3, color="#34C759", width=2.2),
+            marker=dict(size=4, color="#FFFFFF", line=dict(color="#34C759", width=2)),
             fill="tozeroy",
-            fillcolor="rgba(52, 199, 89, 0.06)",
+            fillcolor="rgba(52, 199, 89, 0.05)",
         ))
 
+        # 去噪布局配置：透明背景、无多余外框、淡化 Y 轴网格线
         fig_trend.update_layout(
-            height=280,
+            height=270,
             margin=dict(l=10, r=10, t=10, b=10),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12, color="#6b7280")),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                font=dict(size=12, color="#86868B"),
+            ),
             hovermode="x unified",
         )
-        fig_trend.update_xaxes(showgrid=False, linecolor="#f3f4f6", tickfont=dict(size=11, color="#9ca3af"), nticks=7)
-        fig_trend.update_yaxes(showgrid=True, gridcolor="#f3f4f6", linecolor="rgba(0,0,0,0)", tickfont=dict(size=11, color="#9ca3af"))
+        fig_trend.update_xaxes(showgrid=False, linecolor="rgba(0,0,0,0)", tickfont=dict(size=11, color="#A1A1A6"), nticks=7)
+        fig_trend.update_yaxes(showgrid=True, gridcolor="#F5F5F7", linecolor="rgba(0,0,0,0)", tickfont=dict(size=11, color="#A1A1A6"))
 
         st.plotly_chart(fig_trend, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -216,19 +223,19 @@ def render_dashboard_view():
     with c_right:
         st.markdown(
             """
-            <div class="apple-panel">
-                <div class="apple-panel-title">
+            <div class="card">
+                <div class="card-title">
                     <span>多平台广告表现</span>
-                    <span style="font-size: 16px; opacity: 0.5;">ℹ️</span>
+                    <span style="font-size: 13px; color: #86868B; font-weight: normal;">全渠道</span>
                 </div>
             """,
             unsafe_allow_html=True,
         )
 
-        # Apple 甜甜圈图 (Donut Chart - 参考图 2 色盘)
+        # Apple 甜甜圈图 (Donut Chart - 去噪干净排版)
         donut_labels = ["销售", "广告", "其它", "退货"]
         donut_values = [52, 24, 14, 10]
-        donut_colors = ["#2b3648", "#38a3a5", "#f4a261", "#94a3b8"]
+        donut_colors = ["#2B3648", "#38A3A5", "#F4A261", "#A1A1A6"]
 
         fig_donut = go.Figure(data=[go.Pie(
             labels=donut_labels,
@@ -242,31 +249,31 @@ def render_dashboard_view():
         )])
 
         fig_donut.update_layout(
-            height=240,
+            height=230,
             margin=dict(l=10, r=10, t=10, b=10),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             showlegend=False,
             annotations=[dict(
-                text="76%<br><span style='font-size:11px;color:#86868b;'>有效转化</span>",
+                text="76%<br><span style='font-size:11px;color:#86868B;font-weight:normal;'>有效转化</span>",
                 x=0.5, y=0.5,
                 font_size=19,
                 font_weight=700,
-                font_color="#111827",
+                font_color="#1D1D1F",
                 showarrow=False,
             )],
         )
 
         st.plotly_chart(fig_donut, use_container_width=True)
 
-        # 底部经典图例 (对齐参考图 2 底部单行圆点图例)
+        # 底部极简单行圆点图例
         st.markdown(
             """
-            <div style="display: flex; justify-content: center; align-items: center; gap: 14px; font-size: 12px; color: #4b5563; padding-top: 6px;">
-                <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2b3648;margin-right:4px;"></span>销售</span>
-                <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#38a3a5;margin-right:4px;"></span>广告</span>
-                <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f4a261;margin-right:4px;"></span>其它</span>
-                <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#94a3b8;margin-right:4px;"></span>退货</span>
+            <div style="display: flex; justify-content: center; align-items: center; gap: 14px; font-size: 12px; color: #4B5563; padding-top: 4px;">
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2B3648;margin-right:4px;"></span>销售</span>
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#38A3A5;margin-right:4px;"></span>广告</span>
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#F4A261;margin-right:4px;"></span>其它</span>
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#A1A1A6;margin-right:4px;"></span>退货</span>
             </div>
             </div>
             """,
