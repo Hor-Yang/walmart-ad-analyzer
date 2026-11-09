@@ -54,7 +54,10 @@ def mine_search_terms(
     if st_col and st_col != "搜索词":
         df = df.rename(columns={st_col: "搜索词"})
     elif "搜索词" not in df.columns:
-        df["搜索词"] = [f"搜索词_{i+1}" for i in range(len(df))]
+        # 数据质量底线：严禁捏造虚假搜索词！缺少核心字段直接返回空并标记原因
+        empty_stats["summary_text"] = "报表中未找到【搜索词】核心字段。请确认上传的是领星【搜索词列表报表】，而非广告活动列表或关键词报表。"
+        empty_stats["error"] = "缺少搜索词字段"
+        return empty_neg, empty_mining, empty_hc, empty_stats
 
     # 2. 规范广告活动字段
     camp_col = None

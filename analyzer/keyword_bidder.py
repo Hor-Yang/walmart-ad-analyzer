@@ -51,7 +51,10 @@ def analyze_keyword_bids(
     if kw_col and kw_col != "关键词":
         df = df.rename(columns={kw_col: "关键词"})
     elif "关键词" not in df.columns:
-        df["关键词"] = [f"关键词_{i+1}" for i in range(len(df))]
+        # 数据质量底线：严禁捏造虚假关键词
+        empty_stats["summary_text"] = "报表中未找到【关键词】核心字段。请确认上传的是领星【关键词列表报表】。"
+        empty_stats["error"] = "缺少关键词字段"
+        return empty_res, pd.DataFrame(columns=empty_cols), empty_stats
 
     # 2. 规范广告活动列
     camp_col = None

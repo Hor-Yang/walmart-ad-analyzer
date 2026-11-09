@@ -42,6 +42,15 @@ from .sku_profit_model import (
     calculate_sku_profit_analytics,
 )
 from .decision_engine import AdDecisionEngine
+from .data_quality import inspect_data_quality
+from .traffic_structure import analyze_traffic_structure
+from .diagnosis_12_issues import diagnose_12_advertising_issues
+from .effect_tracker import (
+    log_optimization_actions,
+    load_tracking_history,
+    generate_tracking_summary,
+    clear_tracking_history,
+)
 
 __all__ = [
     "agg_metrics",
@@ -64,4 +73,11 @@ __all__ = [
     "load_sku_cost_table",
     "calculate_sku_profit_analytics",
     "AdDecisionEngine",
+    "inspect_data_quality",
+    "analyze_traffic_structure",
+    "diagnose_12_advertising_issues",
+    "log_optimization_actions",
+    "load_tracking_history",
+    "generate_tracking_summary",
+    "clear_tracking_history",
 ]

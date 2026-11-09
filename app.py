@@ -61,6 +61,13 @@ from analyzer import (
     generate_sku_cost_template,
     calculate_sku_profit_analytics,
     AdDecisionEngine,
+    inspect_data_quality,
+    analyze_traffic_structure,
+    diagnose_12_advertising_issues,
+    log_optimization_actions,
+    load_tracking_history,
+    generate_tracking_summary,
+    clear_tracking_history,
 )
 
 # =========================================================================
@@ -1102,6 +1109,187 @@ with tabs[1]:
             unsafe_allow_html=True,
         )
 
+        # =====================================================================
+        # 沃尔玛广告总监三大核心问题诊断看板 (P0 核心直达)
+        # =====================================================================
+        st.markdown("#### 🎯 沃尔玛广告总监 · 三大核心经营决策")
+        
+        # 1. 当前广告最大的问题是什么？
+        c_prob = exec_sum.get("core_problem_answer", "大盘运行稳定。")
+        st.markdown(
+            f"""
+            <div style="background: #fff1f2; border: 1px solid #fecdd3; border-left: 5px solid #e11d48; border-radius: 8px; padding: 14px 18px; margin-bottom: 14px;">
+                <div style="font-weight: 700; font-size: 15px; color: #9f1239; margin-bottom: 4px;">
+                    ❓ 核心问题一：当前广告账户最大的痛点是什么？
+                </div>
+                <div style="font-size: 14px; color: #881337; line-height: 1.5;">
+                    {safe_html(c_prob)}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # 2. 下一步最值得执行的三个优化动作是什么？
+        st.markdown("##### 📌 核心问题二：下一步最值得执行的三个高杠杆优化动作")
+        top3_list = exec_sum.get("top3_actions", [])
+        if top3_list:
+            t_cols = st.columns(len(top3_list))
+            for idx, act_item in enumerate(top3_list):
+                with t_cols[idx]:
+                    prio_color = "#e11d48" if act_item["priority"] == "P0" else ("#f59e0b" if act_item["priority"] == "P1" else "#10b981")
+                    st.markdown(
+                        f"""
+                        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: 4px solid {prio_color}; border-radius: 8px; padding: 12px 14px; height: 100%;">
+                            <div style="font-size: 12px; font-weight: 700; color: {prio_color}; margin-bottom: 4px;">
+                                {act_item['rank']} · {act_item['priority']} ({act_item['domain']})
+                            </div>
+                            <div style="font-size: 13.5px; font-weight: 700; color: #0f172a; margin-bottom: 6px;">
+                                {safe_html(act_item['target'])}
+                            </div>
+                            <div style="font-size: 13px; color: #334155; margin-bottom: 6px;">
+                                👉 <strong>执行动作：</strong> {safe_html(act_item['action'])}
+                            </div>
+                            <div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">
+                                📏 <strong>幅度：</strong> {safe_html(act_item['magnitude'])}
+                            </div>
+                            <div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">
+                                💡 <strong>依据：</strong> {safe_html(act_item['rationale'])}
+                            </div>
+                            <div style="font-size: 12px; color: #0284c7; font-weight: 600;">
+                                ⏳ <strong>验证周期：</strong> {safe_html(act_item['window'])}
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+        else:
+            st.caption("暂无突出紧急动作。")
+
+        # 3. 如何验证这些动作是否真正改善了经营结果？
+        st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+        with st.expander("⚖️ 核心问题三：如何验证这些动作是否真正改善了经营结果？（3天/7天/14天 KPI 闭环验证指引）", expanded=False):
+            st.caption("广告优化不能只看订单增长，必须建立「止损 -> 结构 -> 利润」的三阶段闭环验证标准：")
+            v_meth = exec_sum.get("validation_methodology", [])
+            vm_cols = st.columns(len(v_meth) if v_meth else 3)
+            for v_idx, v_item in enumerate(v_meth):
+                with vm_cols[v_idx]:
+                    st.markdown(f"**📌 {v_item['phase']}**")
+                    st.info(f"**核心目标：** {v_item['kpi']}\n\n{v_item['desc']}")
+
+        st.markdown("---")
+
+        # =====================================================================
+        # 第一层：数据质量分析与 AI 决策可信度体检
+        # =====================================================================
+        dq_report = inspect_data_quality(
+            st.session_state["section_data"],
+            sku_map=st.session_state.get("sku_map"),
+            sku_cost_dict=st.session_state.get("sku_cost_dict"),
+        )
+        with st.expander(f"🛡️ 第一层：数据质量体检与 AI 决策可信度报告（质量评分: {dq_report['score']}/100 · {dq_report['confidence']}）", expanded=False):
+            st.markdown(f"**当前状态：** {dq_report['status']}")
+            st.caption("严格遵从【数据质量不合格不允许生成确定性结论】原则。以下为字段完整性、格式规范、跨表勾稽与统计口径对账体检：")
+            
+            dq_checks_df = pd.DataFrame(dq_report["checks"])
+            if not dq_checks_df.empty:
+                st.dataframe(dq_checks_df, use_container_width=True, hide_index=True)
+            
+            reconcil = dq_report.get("reconciliation", {})
+            if reconcil.get("spends"):
+                st.caption(f"📊 各报表总花费口径：{reconcil['spends']}")
+
+        # =====================================================================
+        # 第二层：流量结构与匹配方式剖析
+        # =====================================================================
+        traffic_struct = analyze_traffic_structure(
+            campaign_df=active_tables.get("campaign"),
+            keyword_df=active_tables.get("keyword"),
+            search_term_df=active_tables.get("search_term"),
+        )
+        with st.expander("📊 第二层：广告流量结构与匹配方式洞察（Auto vs Manual & 跨活动内耗）", expanded=False):
+            if not traffic_struct["auto_vs_manual_df"].empty:
+                st.markdown("##### 🤖 Auto (自动) vs 🎯 Manual (手动) 流量贡献与预算分配")
+                v_avm = traffic_struct["auto_vs_manual_df"].copy()
+                st.dataframe(
+                    v_avm,
+                    column_config={
+                        "投放模式": st.column_config.TextColumn("投放类型", width="medium"),
+                        "广告花费": st.column_config.NumberColumn("广告花费 ($)", format="$%.2f"),
+                        "花费占比": st.column_config.NumberColumn("花费占比", format="%.1f%%"),
+                        "总销售额": st.column_config.NumberColumn("总销售额 ($)", format="$%.2f"),
+                        "广告订单": st.column_config.NumberColumn("订单", format="%d"),
+                        "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
+                        "ACoS": st.column_config.NumberColumn("ACoS", format="%.2f%%"),
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            if not traffic_struct["match_type_df"].empty:
+                st.markdown("##### 🎯 关键词匹配方式投产表现 (Exact vs Phrase vs Broad)")
+                st.dataframe(
+                    traffic_struct["match_type_df"],
+                    column_config={
+                        "规范匹配方式": st.column_config.TextColumn("匹配方式", width="medium"),
+                        "广告花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
+                        "花费占比": st.column_config.NumberColumn("花费占比", format="%.1f%%"),
+                        "总销售额": st.column_config.NumberColumn("销售额 ($)", format="$%.2f"),
+                        "广告订单": st.column_config.NumberColumn("订单", format="%d"),
+                        "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
+                        "ACoS": st.column_config.NumberColumn("ACoS", format="%.2f%%"),
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            if not traffic_struct["overlap_terms_df"].empty:
+                st.markdown("##### ⚔️ 跨活动流量重叠与同词内耗竞价 (Traffic Overlap)")
+                st.caption("以下搜索词同时在多个广告活动中被触发，容易造成自家活动竞价内耗，抬高整体 CPC：")
+                st.dataframe(traffic_struct["overlap_terms_df"], use_container_width=True, hide_index=True)
+
+            if traffic_struct.get("structure_insights"):
+                st.markdown("##### 💡 结构性优化警示")
+                for si in traffic_struct["structure_insights"]:
+                    st.warning(f"**{si['type']}**：{si['finding']}\n\n👉 **应对策略**：{si['action']}")
+
+        # =====================================================================
+        # 第四层：广告问题十二项全息诊断
+        # =====================================================================
+        issues_12 = diagnose_12_advertising_issues(
+            st.session_state["section_data"],
+            target_acos=target_acos,
+            breakeven_acos=breakeven_acos,
+            sku_cost_dict=st.session_state.get("sku_cost_dict"),
+            sku_map=st.session_state.get("sku_map"),
+        )
+        with st.expander(f"🩺 第四层：广告问题十二项全息穿透诊断（已深度体检 {len(issues_12)} 个异常实体）", expanded=False):
+            st.caption("系统针对每个实体（SKU、活动、广告组、关键词、搜索词）穿透识别 12 类典型问题，输出数据证据、置信度与根因假设：")
+            for iss in issues_12:
+                p_badge = "🔴" if iss["severity"] == "P0" else ("🟠" if iss["severity"] == "P1" else "🟢")
+                st.markdown(
+                    f"""
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid {'#ef4444' if iss['severity']=='P0' else '#f59e0b'}; border-radius: 6px; padding: 10px 14px; margin-bottom: 8px;">
+                        <div style="font-weight: 700; font-size: 13.5px; color: #1e293b;">
+                            {p_badge} 【{iss['issue_type']}】 · {iss['entity']}
+                            <span style="font-size: 11px; color: #0284c7; background: #e0f2fe; padding: 2px 6px; border-radius: 4px; margin-left: 8px;">{iss['confidence']}</span>
+                        </div>
+                        <div style="font-size: 13px; color: #475569; margin-top: 4px;">
+                            <strong>数据证据：</strong> {safe_html(iss['data_evidence'])}
+                        </div>
+                        <div style="font-size: 13px; color: #64748b; margin-top: 2px;">
+                            <strong>根本原因推导：</strong> {safe_html(iss['root_cause'])}
+                        </div>
+                        <div style="font-size: 13px; color: #0f172a; margin-top: 3px;">
+                            👉 <strong>建议措施：</strong> {safe_html(iss['action'])}（预期改善：{safe_html(iss['expected_impact'])}，观察周期：{safe_html(iss['observation_window'])}）
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        st.markdown("---")
+
         # 核心决策指标概览
         st.markdown("#### 🧭 决策中枢核心推导与预估业务影响")
         e1, e2, e3, e4, e5 = st.columns(5)
@@ -1124,9 +1312,9 @@ with tabs[1]:
                 st.dataframe(conf_df, use_container_width=True, hide_index=True)
 
         # 最终结构化决策指令总表
-        st.markdown("#### 📋 最终执行决策指令总表（已完成跨规则去重与仲裁）")
+        st.markdown("#### 📋 第五层：最终执行决策指令总表（包含 8 项标准参数）")
         if not dec_matrix.empty:
-            f_col1, f_col2, f_col3 = st.columns([2, 2, 1])
+            f_col1, f_col2, f_col3, f_col4 = st.columns([2, 2, 1, 1])
             with f_col1:
                 p_filter = st.multiselect("按优先级筛选：", ["P0", "P1", "P2"], default=["P0", "P1", "P2"])
             with f_col2:
@@ -1135,11 +1323,17 @@ with tabs[1]:
             with f_col3:
                 csv_dec = dec_matrix.to_csv(index=False).encode("utf-8-sig")
                 st.download_button(
-                    label=f"📥 导出决策清单 CSV ({len(dec_matrix)}项)",
+                    label=f"📥 导出清单 CSV ({len(dec_matrix)}项)",
                     data=csv_dec,
                     file_name="walmart_decision_matrix.csv",
                     mime="text/csv",
+                    use_container_width=True,
                 )
+            with f_col4:
+                if st.button("💾 归档至追踪库", help="将当前批次建议保存至第六层优化效果追踪库", use_container_width=True):
+                    actions_list = dec_matrix.to_dict(orient="records")
+                    saved_n = log_optimization_actions(actions_list)
+                    st.success(f"已成功归档 {saved_n} 条决策到追踪库！")
 
             v_dec_df = dec_matrix.copy()
             if p_filter:
@@ -1151,17 +1345,56 @@ with tabs[1]:
                 v_dec_df,
                 column_config={
                     "优先级": st.column_config.TextColumn("优先级", width="small"),
-                    "决策领域": st.column_config.TextColumn("业务领域", width="small"),
-                    "对象标识": st.column_config.TextColumn("操作对象", width="medium"),
+                    "决策领域": st.column_config.TextColumn("领域", width="small"),
+                    "操作对象": st.column_config.TextColumn("操作对象", width="medium"),
                     "所属活动/范围": st.column_config.TextColumn("广告活动", width="medium"),
-                    "当前指标依据": st.column_config.TextColumn("数据事实依据", width="medium"),
-                    "决策执行指令": st.column_config.TextColumn("决策执行指令", width="large"),
+                    "当前表现依据": st.column_config.TextColumn("数据事实依据", width="medium"),
+                    "建议动作": st.column_config.TextColumn("建议动作", width="large"),
+                    "建议调整幅度": st.column_config.TextColumn("调整幅度", width="small"),
+                    "调整依据": st.column_config.TextColumn("调整依据", width="medium"),
+                    "风险提示": st.column_config.TextColumn("风险提示", width="medium"),
+                    "验证周期": st.column_config.TextColumn("验证周期", width="small"),
+                    "成功判断标准": st.column_config.TextColumn("成功判断标准", width="medium"),
+                    "置信度": st.column_config.TextColumn("置信度", width="small"),
                     "预估影响金额($)": st.column_config.NumberColumn("预估影响 ($)", format="$%.2f"),
                     "执行状态": st.column_config.TextColumn("状态", width="small"),
                 },
                 use_container_width=True,
                 hide_index=True,
             )
+
+        # =====================================================================
+        # 第六层：效果追踪与模型迭代库展示
+        # =====================================================================
+        st.markdown("---")
+        tracking_data = generate_tracking_summary()
+        with st.expander(f"📈 第六层：效果追踪与模型迭代库（累计归档 {tracking_data['total_actions']} 项动作 · 规则有效率 {tracking_data['success_rate']}）", expanded=False):
+            st.caption("系统自动追踪每项建议的执行前后数据变化，识别哪些优化策略有效，持续校准决策规则与阈值：")
+            
+            # 规则迭代有效性统计
+            st.markdown("##### 🔬 决策规则有效性回测与校准统计")
+            rule_df = pd.DataFrame(tracking_data["model_rule_stats"])
+            if not rule_df.empty:
+                st.dataframe(
+                    rule_df,
+                    column_config={
+                        "rule_name": st.column_config.TextColumn("诊断规则名称", width="medium"),
+                        "sample_count": st.column_config.NumberColumn("回测样本数", format="%d"),
+                        "effectiveness": st.column_config.TextColumn("实测有效性", width="small"),
+                        "impact": st.column_config.TextColumn("业务影响与校准结论", width="large"),
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            # 历史执行追踪表
+            if not tracking_data["records_df"].empty:
+                st.markdown("##### 📋 历史建议执行跟踪明细")
+                t_disp_df = tracking_data["records_df"][["action_id", "execution_date", "entity", "domain", "ai_action", "validation_window", "outcome_evaluation"]]
+                st.dataframe(t_disp_df, use_container_width=True, hide_index=True)
+                if st.button("🗑️ 清空历史优化追踪记录", key="btn_clear_track"):
+                    clear_tracking_history()
+                    st.rerun()
 
         # 动态流量漏斗健康度与保本盈亏评估
         st.markdown("---")
@@ -1298,8 +1531,12 @@ with tabs[3]:
             with st.spinner("正在解析广告活动报表..."):
                 t_type, df, _ = parse_single_file_cached(f_camp.name, f_camp.getvalue(), "campaign")
                 if df is not None:
-                    update_section("campaign", df, f_camp.name, f_camp.getvalue())
-                    st.rerun()
+                    has_camp = any("活动" in str(c) or "campaign" in str(c).lower() for c in df.columns)
+                    if not has_camp:
+                        st.error(f"❌ **上传文件类型不匹配**：您上传的文件【`{f_camp.name}`】未检测到【广告活动】核心维度列！请确认上传的是领星【广告活动列表报表】。")
+                    else:
+                        update_section("campaign", df, f_camp.name, f_camp.getvalue())
+                        st.rerun()
         except Exception as e:
             st.error(f"解析失败: {e}")
 
@@ -1379,8 +1616,18 @@ with tabs[4]:
             with st.spinner("正在挖掘搜索词..."):
                 t_type, df, _ = parse_single_file_cached(f_st.name, f_st.getvalue(), "search_term")
                 if df is not None:
-                    update_section("search_term", df, f_st.name, f_st.getvalue())
-                    st.rerun()
+                    has_st = any(c in str(col).lower() for col in df.columns for c in ["搜索词", "search term", "customer search term", "query", "客户搜索词"])
+                    if not has_st:
+                        st.error(
+                            f"❌ **上传文件类型不匹配**：您上传的文件【`{f_st.name}`】未检测到核心【搜索词】字段！\n\n"
+                            f"🔍 系统检测该文件实际为：【{t_type or '广告活动'}】报表。\n\n"
+                            f"👉 **正确操作指引**：\n"
+                            f"1. 请在领星系统中进入【广告分析 -> 搜索词列表】导出真实的搜索词报表再上传；\n"
+                            f"2. 若您刚才是想分析广告活动，请前往「① 广告活动诊断」选项卡上传该文件。"
+                        )
+                    else:
+                        update_section("search_term", df, f_st.name, f_st.getvalue())
+                        st.rerun()
         except Exception as e:
             st.error(f"解析失败: {e}")
 
@@ -1388,68 +1635,77 @@ with tabs[4]:
     if st_df is not None and not st_df.empty:
         try:
             neg_df, mining_df, hc_df, st_stats = mine_search_terms(st_df)
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                st.metric("🚨 P0 紧急否词", f"{st_stats['p0_count']} 个", f"止损 ${st_stats['p0_spend']:,.2f}")
-            with c2:
-                st.metric("📉 P1 低产出否词", f"{st_stats['p1_count']} 个", f"止损 ${st_stats['p1_spend']:,.2f}")
-            with c3:
-                st.metric("💎 可挖掘出单词", f"{st_stats['mining_count']} 个", f"销售额 ${st_stats['mining_sales']:,.2f}")
-            with c4:
-                st.metric("⚠️ 高点击零转化词", f"{st_stats['high_clicks_count']} 个")
-
-            list_choice = st.radio("查看清单：", ["清单 A：否词清单", "清单 B：挖词清单", "清单 C：高点击零转化"], horizontal=True)
-            if "清单 A" in list_choice:
-                v_neg = neg_df.copy()
-                if "CTR" in v_neg.columns:
-                    v_neg["CTR%"] = pd.to_numeric(v_neg["CTR"], errors="coerce") * 100.0
-                st.dataframe(
-                    v_neg,
-                    column_config={
-                        "优先级": st.column_config.TextColumn("优先级", width="small"),
-                        "搜索词": st.column_config.TextColumn("搜索词", width="medium"),
-                        "来源广告活动": st.column_config.TextColumn("来源活动", width="medium"),
-                        "建议否定类型": st.column_config.TextColumn("建议否定匹配", width="medium"),
-                        "花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
-                        "点击": st.column_config.NumberColumn("点击", format="%d"),
-                        "CTR%": st.column_config.NumberColumn("CTR", format="%.2f%%"),
-                        "订单": st.column_config.NumberColumn("订单", format="%d"),
-                        "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
-                        "建议动作": st.column_config.TextColumn("落地执行指令", width="large"),
-                    },
-                    use_container_width=True,
-                    hide_index=True,
+            if st_stats.get("error"):
+                st.error(
+                    f"⚠️ **数据质量异常拦截**：{st_stats.get('summary_text')}\n\n"
+                    f"当前在「搜索词报表」槽位中暂存的文件可能被误上传为了广告活动报表，系统已执行安全熔断（拒绝捏造虚假搜索词）。"
                 )
-            elif "清单 B" in list_choice:
-                st.dataframe(
-                    mining_df,
-                    column_config={
-                        "搜索词": st.column_config.TextColumn("搜索词", width="medium"),
-                        "来源广告活动": st.column_config.TextColumn("来源活动", width="medium"),
-                        "订单": st.column_config.NumberColumn("订单", format="%d"),
-                        "总销售额": st.column_config.NumberColumn("销售额 ($)", format="$%.2f"),
-                        "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
-                        "当前CPC": st.column_config.NumberColumn("当前 CPC", format="$%.2f"),
-                        "出价建议": st.column_config.NumberColumn("建议出价 ($)", format="$%.2f"),
-                        "建议动作": st.column_config.TextColumn("建议动作", width="large"),
-                    },
-                    use_container_width=True,
-                    hide_index=True,
-                )
+                if st.button("🗑️ 清除该槽位的错误文件并重新上传", key="btn_clean_wrong_st"):
+                    update_section("search_term", None, "", None)
+                    st.rerun()
             else:
-                st.dataframe(
-                    hc_df,
-                    column_config={
-                        "搜索词": st.column_config.TextColumn("搜索词", width="medium"),
-                        "来源广告活动": st.column_config.TextColumn("来源活动", width="medium"),
-                        "点击": st.column_config.NumberColumn("累计点击", format="%d"),
-                        "花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
-                        "CPC": st.column_config.NumberColumn("CPC ($)", format="$%.2f"),
-                        "诊断建议": st.column_config.TextColumn("诊断建议", width="large"),
-                    },
-                    use_container_width=True,
-                    hide_index=True,
-                )
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    st.metric("🚨 P0 紧急否词", f"{st_stats['p0_count']} 个", f"止损 ${st_stats['p0_spend']:,.2f}")
+                with c2:
+                    st.metric("📉 P1 低产出否词", f"{st_stats['p1_count']} 个", f"止损 ${st_stats['p1_spend']:,.2f}")
+                with c3:
+                    st.metric("💎 可挖掘出单词", f"{st_stats['mining_count']} 个", f"销售额 ${st_stats['mining_sales']:,.2f}")
+                with c4:
+                    st.metric("⚠️ 高点击零转化词", f"{st_stats['high_clicks_count']} 个")
+
+                list_choice = st.radio("查看清单：", ["清单 A：否词清单", "清单 B：挖词清单", "清单 C：高点击零转化"], horizontal=True)
+                if "清单 A" in list_choice:
+                    v_neg = neg_df.copy()
+                    if "CTR" in v_neg.columns:
+                        v_neg["CTR%"] = pd.to_numeric(v_neg["CTR"], errors="coerce") * 100.0
+                    st.dataframe(
+                        v_neg,
+                        column_config={
+                            "优先级": st.column_config.TextColumn("优先级", width="small"),
+                            "搜索词": st.column_config.TextColumn("搜索词", width="medium"),
+                            "来源广告活动": st.column_config.TextColumn("来源活动", width="medium"),
+                            "建议否定类型": st.column_config.TextColumn("建议否定匹配", width="medium"),
+                            "花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
+                            "点击": st.column_config.NumberColumn("点击", format="%d"),
+                            "CTR%": st.column_config.NumberColumn("CTR", format="%.2f%%"),
+                            "订单": st.column_config.NumberColumn("订单", format="%d"),
+                            "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
+                            "建议动作": st.column_config.TextColumn("落地执行指令", width="large"),
+                        },
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                elif "清单 B" in list_choice:
+                    st.dataframe(
+                        mining_df,
+                        column_config={
+                            "搜索词": st.column_config.TextColumn("搜索词", width="medium"),
+                            "来源广告活动": st.column_config.TextColumn("来源活动", width="medium"),
+                            "订单": st.column_config.NumberColumn("订单", format="%d"),
+                            "总销售额": st.column_config.NumberColumn("销售额 ($)", format="$%.2f"),
+                            "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
+                            "当前CPC": st.column_config.NumberColumn("当前 CPC", format="$%.2f"),
+                            "出价建议": st.column_config.NumberColumn("建议出价 ($)", format="$%.2f"),
+                            "建议动作": st.column_config.TextColumn("建议动作", width="large"),
+                        },
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.dataframe(
+                        hc_df,
+                        column_config={
+                            "搜索词": st.column_config.TextColumn("搜索词", width="medium"),
+                            "来源广告活动": st.column_config.TextColumn("来源活动", width="medium"),
+                            "点击": st.column_config.NumberColumn("累计点击", format="%d"),
+                            "花费": st.column_config.NumberColumn("花费 ($)", format="$%.2f"),
+                            "CPC": st.column_config.NumberColumn("CPC ($)", format="$%.2f"),
+                            "诊断建议": st.column_config.TextColumn("诊断建议", width="large"),
+                        },
+                        use_container_width=True,
+                        hide_index=True,
+                    )
         except Exception as e:
             st.error(f"计算异常: {e}")
 
@@ -1469,8 +1725,12 @@ with tabs[5]:
             with st.spinner("正在分析关键词竞价策略..."):
                 t_type, df, _ = parse_single_file_cached(f_kw.name, f_kw.getvalue(), "keyword")
                 if df is not None:
-                    update_section("keyword", df, f_kw.name, f_kw.getvalue())
-                    st.rerun()
+                    has_kw = any(c in str(col).lower() for col in df.columns for c in ["关键词", "keyword", "keywords", "kw", "投放词"])
+                    if not has_kw:
+                        st.error(f"❌ **上传文件类型不匹配**：您上传的文件【`{f_kw.name}`】未检测到核心【关键词】字段！请确认上传的是领星导出的【关键词列表报表】。")
+                    else:
+                        update_section("keyword", df, f_kw.name, f_kw.getvalue())
+                        st.rerun()
         except Exception as e:
             st.error(f"解析失败: {e}")
 
@@ -1478,7 +1738,13 @@ with tabs[5]:
     if kw_df is not None and not kw_df.empty:
         try:
             kw_res, all_kw, kw_stats = analyze_keyword_bids(kw_df)
-            c1, c2, c3, c4 = st.columns(4)
+            if kw_stats.get("error"):
+                st.error(f"⚠️ **数据质量异常拦截**：{kw_stats.get('summary_text')}")
+                if st.button("🗑️ 清除该槽位的错误文件并重新上传", key="btn_clean_wrong_kw"):
+                    update_section("keyword", None, "", None)
+                    st.rerun()
+            else:
+                c1, c2, c3, c4 = st.columns(4)
             with c1:
                 st.metric("🚨 该暂停关键词", f"{kw_stats['pause_count']} 个", f"止损 ${kw_stats['pause_spend']:,.2f}")
             with c2:
@@ -1535,10 +1801,14 @@ with tabs[6]:
             with st.spinner("正在解析商品广告位数据..."):
                 t_type, df, _ = parse_single_file_cached(f_ad.name, f_ad.getvalue(), "ad_item")
                 if df is not None:
-                    if st.session_state.get("sku_map"):
-                        df = apply_sku_mapping(df, st.session_state["sku_map"])
-                    update_section("ad_item", df, f_ad.name, f_ad.getvalue())
-                    st.rerun()
+                    has_id = any(c in str(col).lower() for col in df.columns for c in ["项目id", "item id", "item_id", "商品id", "sku", "广告列表"])
+                    if not has_id:
+                        st.error(f"❌ **上传文件类型不匹配**：您上传的文件【`{f_ad.name}`】未检测到【项目ID/SKU】商品维度！请确认上传的是领星导出的【广告列表报表】。")
+                    else:
+                        if st.session_state.get("sku_map"):
+                            df = apply_sku_mapping(df, st.session_state["sku_map"])
+                        update_section("ad_item", df, f_ad.name, f_ad.getvalue())
+                        st.rerun()
         except Exception as e:
             st.error(f"解析失败: {e}")
 
