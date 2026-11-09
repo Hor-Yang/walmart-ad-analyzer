@@ -43,7 +43,12 @@ from frontend.views import (
     render_data_hub_view,
     render_settings_view,
 )
-from data_loader.session_storage import load_session_cache
+
+try:
+    from data_loader.session_storage import load_session_cache
+except ImportError:
+    def load_session_cache():
+        return None
 
 
 # 4. 初始化全局状态与会话缓存
@@ -68,13 +73,19 @@ def init_application_state():
     if "active_page" not in st.session_state:
         st.session_state["active_page"] = "dashboard"
 
-    # 若内存中无数据，尝试从本地缓存中热恢复
-    if not any(v is not None for v in st.session_state["section_data"].values()):
-        cached_data, cached_files, cached_bytes = load_session_cache()
-        if cached_data:
-            st.session_state["section_data"] = cached_data
-            st.session_state["section_files"] = cached_files
-            st.session_state["section_file_bytes"] = cached_bytes
+    # 若内存中无数据，安全尝试从本地缓存中热恢复
+    try:
+        if not any(v is not None for v in st.session_state["section_data"].values()):
+            cached = load_session_cache()
+            if isinstance(cached, dict):
+                st.session_state["section_data"] = cached.get("section_data", {})
+                st.session_state["section_files"] = cached.get("file_names", {})
+                if "sku_map" in cached and cached["sku_map"]:
+                    st.session_state["sku_mapping"] = cached["sku_map"]
+                if "sku_cost_dict" in cached and cached["sku_cost_dict"]:
+                    st.session_state["sku_cost_dict"] = cached["sku_cost_dict"]
+    except Exception:
+        pass
 
 
 init_application_state()
