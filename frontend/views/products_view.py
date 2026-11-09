@@ -42,12 +42,16 @@ def render_products_view():
                     "映射状态": "已生效",
                 })
         elif item_df is not None and not item_df.empty:
-            sku_col = "sku" if "sku" in item_df.columns else "item_id"
+            # // FIX: 防御性识别 SKU / 项目 ID 列名，防止缺失字段抛出 KeyError
+            sku_col = next((c for c in ["SKU", "sku", "对应SKU", "商品SKU", "项目ID", "item_id", "Item ID"] if c in item_df.columns), item_df.columns[0])
             for s in item_df[sku_col].dropna().unique():
+                s_str = str(s).strip()
+                if not s_str or s_str in ["nan", "None", "-"]:
+                    continue
                 master_records.append({
-                    "Master SKU": str(s),
-                    "SPU 款号": str(s).split("-")[0] if "-" in str(s) else str(s),
-                    "Walmart Item ID": str(s),
+                    "Master SKU": s_str,
+                    "SPU 款号": s_str.split("-")[0] if "-" in s_str else s_str,
+                    "Walmart Item ID": s_str,
                     "Amazon ASIN": "-",
                     "Wayfair SKU": "待映射",
                     "一级类目": "跨境通用",

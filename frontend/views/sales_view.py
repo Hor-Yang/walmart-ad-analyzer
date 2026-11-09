@@ -126,7 +126,8 @@ def render_sales_view():
     # 3. 商品销售贡献度榜单
     st.markdown("#### 商品销售表现排行 (Top SKUs by Sales)")
     if item_df is not None and not item_df.empty:
-        sku_col = "sku" if "sku" in item_df.columns else "item_id"
+        # // FIX: 防御性多字段查找 SKU 或商品标识列，杜绝 KeyError
+        sku_col = next((c for c in ["SKU", "sku", "对应SKU", "商品SKU", "项目ID", "item_id", "Item ID"] if c in item_df.columns), item_df.columns[0])
         sku_rank = item_df.groupby(sku_col).agg({
             "销售额": "sum" if "销售额" in item_df.columns else "count",
             "订单量": "sum" if "订单量" in item_df.columns else "count",

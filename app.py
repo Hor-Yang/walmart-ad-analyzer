@@ -94,13 +94,26 @@ init_application_state()
 active_page = render_sidebar_navigation()
 
 # 6. 计算可用 SKU 列表供全局筛选栏快速选择
+# // FIX: 采用防御性多字段探测（兼容中英文与项目ID），彻底修复 KeyError: 'item_id'
 available_skus = ["全部 SKU"]
 sec_ad_item = st.session_state["section_data"].get("ad_item")
 if sec_ad_item is not None and not sec_ad_item.empty:
-    sku_c = "sku" if "sku" in sec_ad_item.columns else "item_id"
-    available_skus += list(sec_ad_item[sku_c].dropna().unique())
-elif st.session_state.get("sku_mapping"):
-    available_skus += list(set(st.session_state["sku_mapping"].values()))
+    sku_c = next((c for c in ["SKU", "sku", "对应SKU", "商品SKU", "项目ID", "item_id", "Item ID", "seller_sku"] if c in sec_ad_item.columns), None)
+    if sku_c:
+        vals = [str(x).strip() for x in sec_ad_item[sku_c].dropna().unique() if str(x).strip() not in ["", "nan", "None", "-"]]
+        available_skus += sorted(list(set(vals)))
+if st.session_state.get("sku_mapping"):
+    map_vals = [str(x).strip() for x in st.session_state["sku_mapping"].values() if str(x).strip() not in ["", "nan", "None", "-"]]
+    available_skus += sorted(list(set(map_vals)))
+
+# 去重并保证 "全部 SKU" 在首位
+seen = set()
+unique_skus = []
+for s in available_skus:
+    if s not in seen:
+        seen.add(s)
+        unique_skus.append(s)
+available_skus = unique_skus
 
 # 7. 渲染顶部全局筛选栏
 global_filters = render_global_filter_bar(available_skus=available_skus)
