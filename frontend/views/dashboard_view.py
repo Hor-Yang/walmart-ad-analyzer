@@ -8,7 +8,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from frontend.components.kpi_card import render_kpi_card, render_empty_state
-from analyzer.metrics import safe_divide
+from frontend.utils.formatters import safe_num_divide
 
 
 def render_dashboard_view():
@@ -35,9 +35,6 @@ def render_dashboard_view():
         total_clicks = int(camp_df["点击量"].sum()) if "点击量" in camp_df.columns else 0
         total_impressions = int(camp_df["曝光量"].sum()) if "曝光量" in camp_df.columns else 0
 
-    ad_roas = safe_divide(total_ad_sales, total_spend)
-    ad_acos = safe_divide(total_spend, total_ad_sales) * 100.0
-
     # 估算销售与毛利数据（结合日走势或广告表现）
     has_daily_data = daily_trend_df is not None and not daily_trend_df.empty
     gross_sales = total_ad_sales
@@ -52,15 +49,8 @@ def render_dashboard_view():
         if "销售量" in daily_trend_df.columns:
             total_units = int(pd.to_numeric(daily_trend_df["销售量"], errors="coerce").sum())
 
-    aov = safe_divide(gross_sales, total_orders) if total_orders > 0 else 0.0
-
-    # 利润推算
-    pre_ad_profit = gross_sales * 0.35  # 行业默认基础毛利参考
-    post_ad_profit = pre_ad_profit - total_spend
-    profit_margin = safe_divide(post_ad_profit, gross_sales) * 100.0 if gross_sales > 0 else 0.0
-
-    # 检查是否有任何数据载入
-    has_any_data = (total_spend > 0) or (gross_sales > 0) or (camp_df is not None)
+    # 检查是否有任何业务数据载入，无数据时提前渲染空状态引导
+    has_any_data = (total_spend > 0) or (gross_sales > 0) or (camp_df is not None and not camp_df.empty)
 
     if not has_any_data:
         render_empty_state(
@@ -74,6 +64,15 @@ def render_dashboard_view():
             st.session_state["active_page"] = "data_hub"
             st.rerun()
         return
+
+    ad_roas = safe_num_divide(total_ad_sales, total_spend, default=0.0)
+    ad_acos = safe_num_divide(total_spend, total_ad_sales, default=0.0) * 100.0
+    aov = safe_num_divide(gross_sales, total_orders, default=0.0)
+
+    # 利润推算
+    pre_ad_profit = gross_sales * 0.35  # 行业默认基础毛利参考
+    post_ad_profit = pre_ad_profit - total_spend
+    profit_margin = safe_num_divide(post_ad_profit, gross_sales, default=0.0) * 100.0
 
     # 2. 核心 KPI 矩阵 (4 组 12 个指标)
     st.markdown("#### 1. 核心经营业绩看板 (Core Performance KPIs)")
@@ -201,7 +200,7 @@ def render_dashboard_view():
                     "销售额": "sum" if "销售额" in item_df.columns else "count",
                     "订单量": "sum" if "订单量" in item_df.columns else "count",
                 }).reset_index().sort_values(by="销售额", ascending=False).head(5)
-                top_items["ROAS"] = top_items.apply(lambda r: safe_divide(r.get("销售额", 0), r.get("花费", 0)), axis=1)
+                top_items["ROAS"] = top_items.apply(lambda r: safe_num_divide(r.get("销售额", 0), r.get("花费", 0), default=0.0), axis=1)
                 st.dataframe(
                     top_items,
                     column_config={

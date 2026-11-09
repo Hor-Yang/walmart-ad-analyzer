@@ -6,7 +6,7 @@
 import streamlit as st
 import pandas as pd
 from frontend.components.kpi_card import render_kpi_card, render_empty_state
-from analyzer.metrics import safe_divide
+from frontend.utils.formatters import safe_num_divide
 
 
 def render_inventory_view():

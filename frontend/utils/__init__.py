@@ -4,6 +4,7 @@ from .formatters import (
     fmt_num,
     fmt_ratio,
     fmt_opt_float,
+    safe_num_divide,
     format_metrics_for_display,
     render_kpi_row,
 )

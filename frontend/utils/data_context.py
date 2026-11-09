@@ -63,11 +63,15 @@ def update_section(sec_id: str, df: pd.DataFrame, file_name: str, file_bytes: by
     st.session_state["section_files"][sec_id] = file_name
     st.session_state["section_file_bytes"][sec_id] = file_bytes
 
-    save_session_cache(
-        st.session_state["section_data"],
-        st.session_state["section_files"],
-        st.session_state["section_file_bytes"],
-    )
+    try:
+        save_session_cache(
+            section_data=st.session_state["section_data"],
+            sku_map=st.session_state.get("sku_mapping", {}),
+            sku_cost_dict=st.session_state.get("sku_cost_dict", {}),
+            file_names=st.session_state["section_files"],
+        )
+    except Exception:
+        pass
     record_upload_audit_log(
         file_name=file_name,
         section_id=sec_id,

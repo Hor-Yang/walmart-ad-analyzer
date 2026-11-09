@@ -7,7 +7,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from frontend.components.kpi_card import render_kpi_card, render_empty_state
-from analyzer.metrics import safe_divide
+from frontend.utils.formatters import safe_num_divide
 
 
 def render_sales_view():
@@ -36,11 +36,6 @@ def render_sales_view():
         if "销售量" in daily_trend_df.columns:
             total_units = int(pd.to_numeric(daily_trend_df["销售量"], errors="coerce").sum())
 
-    organic_sales = max(0.0, total_sales - ad_sales)
-    organic_ratio = safe_divide(organic_sales, total_sales) * 100.0 if total_sales > 0 else 0.0
-    ad_ratio = 100.0 - organic_ratio if total_sales > 0 else 0.0
-    aov = safe_divide(total_sales, total_orders) if total_orders > 0 else 0.0
-
     if total_sales <= 0:
         render_empty_state(
             title="暂无销售业务数据",
@@ -53,6 +48,11 @@ def render_sales_view():
             st.session_state["active_page"] = "data_hub"
             st.rerun()
         return
+
+    organic_sales = max(0.0, total_sales - ad_sales)
+    organic_ratio = safe_num_divide(organic_sales, total_sales, default=0.0) * 100.0
+    ad_ratio = max(0.0, 100.0 - organic_ratio)
+    aov = safe_num_divide(total_sales, total_orders, default=0.0)
 
     # 1. 销售核心 KPI
     k1, k2, k3, k4 = st.columns(4)
@@ -100,7 +100,7 @@ def render_sales_view():
             "订单量": "sum" if "订单量" in item_df.columns else "count",
             "花费": "sum" if "花费" in item_df.columns else "count",
         }).reset_index().sort_values(by="销售额", ascending=False)
-        sku_rank["客单价 ($)"] = sku_rank.apply(lambda r: safe_divide(r.get("销售额", 0), r.get("订单量", 0)), axis=1)
+        sku_rank["客单价 ($)"] = sku_rank.apply(lambda r: safe_num_divide(r.get("销售额", 0), r.get("订单量", 0), default=0.0), axis=1)
         st.dataframe(
             sku_rank,
             column_config={

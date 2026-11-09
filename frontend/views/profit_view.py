@@ -11,8 +11,7 @@ from analyzer.sku_profit_model import (
     calculate_sku_profit_analytics,
     generate_sku_cost_template,
 )
-from frontend.utils.formatters import fmt_money, fmt_pct, fmt_num, fmt_ratio
-from analyzer.metrics import safe_divide
+from frontend.utils.formatters import fmt_money, fmt_pct, fmt_num, fmt_ratio, safe_num_divide
 
 
 def render_profit_view():
@@ -54,8 +53,8 @@ def render_profit_view():
     pre_ad_profit = p_sum.get("广告前贡献总利润", 0.0)
     post_ad_profit = p_sum.get("广告后实际净利润", 0.0)
     be_acos = p_sum.get("全店加权保本ACoS", 0.35)
-    actual_acos = safe_divide(tot_spend, tot_sales) if tot_sales > 0 else 0.0
-    post_margin = safe_divide(post_ad_profit, tot_sales) * 100.0 if tot_sales > 0 else 0.0
+    actual_acos = safe_num_divide(tot_spend, tot_sales, default=0.0)
+    post_margin = safe_num_divide(post_ad_profit, tot_sales, default=0.0) * 100.0
 
     # 2. 核心利润 KPI 卡片
     k1, k2, k3, k4 = st.columns(4)

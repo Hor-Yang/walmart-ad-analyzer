@@ -43,7 +43,6 @@ from frontend.views import (
     render_data_hub_view,
     render_settings_view,
 )
-
 try:
     from data_loader.session_storage import load_session_cache
 except ImportError:

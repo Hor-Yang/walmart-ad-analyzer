@@ -53,6 +53,21 @@ def fmt_opt_float(val: Any, default: str = "N/A", prec: int = 2) -> str:
         return default
 
 
+def safe_num_divide(numerator: Any, denominator: Any, default: float = 0.0) -> float:
+    """数值安全除法：永远返回 float，零分母或空值返回 default，杜绝 None 参与四则运算抛出 TypeError"""
+    try:
+        if denominator is None or pd.isna(denominator):
+            return float(default)
+        den = float(denominator)
+        if den == 0.0:
+            return float(default)
+        if numerator is None or pd.isna(numerator):
+            return 0.0
+        return float(numerator) / den
+    except (ValueError, TypeError, ZeroDivisionError):
+        return float(default)
+
+
 def format_metrics_for_display(metrics: Dict[str, Any]) -> Dict[str, str]:
     """将指标字典标准化格式化为可直读文本"""
     out = {}
