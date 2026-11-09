@@ -39,54 +39,83 @@ html, body, [class*="css"], [class*="st-"] {
     background-color: var(--apple-bg) !important;
 }
 
-/* 隐藏无关杂项，保留头部控制栏 */
-#MainMenu { visibility: hidden; }
-footer { visibility: hidden; }
+/* 隐藏无关杂项，保留头部控制栏与侧边栏展开按钮 */
+#MainMenu { visibility: hidden !important; display: none !important; }
+footer { visibility: hidden !important; display: none !important; }
 .stDeployButton { display: none !important; }
-[data-testid="stToolbar"] { display: none !important; }
+[data-testid="stStatusWidget"] { display: none !important; }
 
 /* =========================================================================
-   1. 解决侧边栏收起后按钮丢失 Bug：Apple 悬浮胶囊恢复按钮
+   1. 解决侧边栏收起后按钮丢失 Bug：永久确保展开按钮（stExpandSidebarButton）常驻高亮
    ========================================================================= */
-header {
+header[data-testid="stHeader"] {
     background: transparent !important;
-    height: 0px !important;
+    pointer-events: none !important;
+    z-index: 99999 !important;
+    display: flex !important;
+    height: 48px !important;
 }
 
-/* 侧边栏收起后在页面左上角展现的高质感悬浮按钮 */
-[data-testid="collapsedControl"] {
+[data-testid="stToolbar"],
+.stAppToolbar {
+    pointer-events: auto !important;
     display: flex !important;
     visibility: visible !important;
+    opacity: 1 !important;
+    background: transparent !important;
+}
+
+/* 无论现代版本 (stExpandSidebarButton) 还是旧版本 (collapsedControl)，均强制置顶展示为 Apple 悬浮按钮 */
+[data-testid="stExpandSidebarButton"],
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapsedControl"],
+button[aria-label="Expand sidebar"],
+button[aria-label="Open sidebar"],
+header button:not(#MainMenu):not(.stDeployButton) {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
     position: fixed !important;
-    top: 16px !important;
-    left: 16px !important;
-    z-index: 999999 !important;
+    top: 14px !important;
+    left: 14px !important;
+    z-index: 9999999 !important;
     width: 40px !important;
     height: 40px !important;
-    background: rgba(255, 255, 255, 0.95) !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    background: rgba(255, 255, 255, 0.98) !important;
     backdrop-filter: blur(20px) !important;
     -webkit-backdrop-filter: blur(20px) !important;
     border-radius: 12px !important;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04) !important;
-    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    border: 1px solid rgba(0, 0, 0, 0.12) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10), 0 1px 3px rgba(0, 0, 0, 0.05) !important;
     color: #1d1d1f !important;
     align-items: center !important;
     justify-content: center !important;
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
     cursor: pointer !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
-[data-testid="collapsedControl"]:hover {
+[data-testid="stExpandSidebarButton"]:hover,
+[data-testid="collapsedControl"]:hover,
+button[aria-label="Expand sidebar"]:hover,
+button[aria-label="Open sidebar"]:hover {
     background: #ffffff !important;
-    transform: scale(1.06) !important;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12) !important;
+    transform: scale(1.08) !important;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16) !important;
+    border-color: rgba(0, 113, 227, 0.4) !important;
 }
 
-[data-testid="collapsedControl"] svg {
+[data-testid="stExpandSidebarButton"] svg,
+[data-testid="collapsedControl"] svg,
+button[aria-label="Expand sidebar"] svg,
+button[aria-label="Open sidebar"] svg {
+    color: #1d1d1f !important;
+    fill: #1d1d1f !important;
+    stroke: #1d1d1f !important;
     width: 20px !important;
     height: 20px !important;
-    stroke-width: 2.2 !important;
-    color: #1d1d1f !important;
 }
 
 /* 主工作区内边距优化 */
