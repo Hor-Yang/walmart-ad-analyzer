@@ -7,8 +7,11 @@ import streamlit as st
 import pandas as pd
 from data_loader.session_storage import clear_session_cache
 from frontend.components.kpi_card import render_kpi_card, render_page_header
+from frontend.utils.error_handler import safe_view_render
 
 
+# // FIX: 全局与模块级异常兜底装饰器，阻断 Traceback 裸露，提供生产级友好提示
+@safe_view_render("系统设置")
 def render_settings_view():
     render_page_header("系统设置", "跨平台对接配置、数据治理规则、成本核算基准与系统会话重置")
 

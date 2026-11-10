@@ -8,8 +8,11 @@ import pandas as pd
 import plotly.graph_objects as go
 from frontend.components.kpi_card import render_kpi_card, render_empty_state, render_page_header
 from frontend.utils.formatters import safe_num_divide
+from frontend.utils.error_handler import safe_view_render
 
 
+# // FIX: 全局与模块级异常兜底装饰器，阻断 Traceback 裸露，提供生产级友好提示
+@safe_view_render("销售分析")
 def render_sales_view():
     render_page_header("销售分析", "全渠道多店铺销售穿透：GMV、出单结构、退款率、自然销售与广告销售口径对齐")
 

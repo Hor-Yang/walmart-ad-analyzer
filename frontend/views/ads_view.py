@@ -50,6 +50,7 @@ from frontend.utils.data_context import (
     update_section,
 )
 from frontend.components.kpi_card import render_empty_state, render_page_header
+from frontend.utils.error_handler import safe_view_render
 
 
 def safe_html(val) -> str:
@@ -58,6 +59,8 @@ def safe_html(val) -> str:
     return html.escape(str(val))
 
 
+# // FIX: 全局与模块级异常兜底装饰器，阻断 Traceback 裸露，提供生产级友好提示
+@safe_view_render("广告分析")
 def render_ads_view():
     # 统一 Apple macOS 标题规范
     render_page_header("广告分析", "全渠道广告多维诊断：漏斗分析、精准控词、竞价阶梯、商品健康度与位置溢价优化")

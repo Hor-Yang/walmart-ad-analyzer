@@ -41,9 +41,11 @@ from frontend.views import (
     render_products_view,
     render_profit_view,
     render_ai_view,
+    render_history_view,  # // FIX: 注册全新历史分析与双期对比视图
     render_data_hub_view,
     render_settings_view,
 )
+from frontend.utils.error_handler import render_friendly_error  # // FIX: 生产级全局顶层异常兜底脱敏组件
 try:
     from data_loader.session_storage import load_session_cache
 except ImportError:
@@ -127,9 +129,28 @@ VIEW_ROUTER = {
     "products": render_products_view,
     "profitability": render_profit_view,
     "ai_intelligence": render_ai_view,
+    "history_diff": render_history_view,  # // FIX: 路由绑定历史分析中心与双期对比视图
     "data_hub": render_data_hub_view,
     "settings": render_settings_view,
 }
 
 render_func = VIEW_ROUTER.get(active_page, render_dashboard_view)
-render_func()
+
+# // FIX: 生产级全局顶层异常兜底拦截，严禁未捕获的 Python Traceback 泄露到前端用户界面
+try:
+    render_func()
+except Exception as e:
+    page_names = {
+        "dashboard": "经营总览",
+        "ads_analytics": "广告分析",
+        "sales_analytics": "销售分析",
+        "inventory": "库存管理",
+        "products": "产品管理",
+        "profitability": "利润分析",
+        "ai_intelligence": "AI 决策中心",
+        "history_diff": "历史对比",
+        "data_hub": "数据中心",
+        "settings": "系统设置",
+    }
+    view_title = page_names.get(active_page, active_page)
+    render_friendly_error(view_title, e, custom_guidance=f"模块「{view_title}」在渲染时发生未预期的异常，已安全拦截并记录审计日志。请核对数据字段或稍后重试。")

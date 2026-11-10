@@ -13,6 +13,10 @@ from .data_context import (
     parse_trend_data_cached,
     update_section,
 )
+from .error_handler import (
+    safe_view_render,
+    render_friendly_error,
+)
 
 __all__ = [
     "fmt_money",
@@ -25,4 +29,6 @@ __all__ = [
     "parse_single_file_cached",
     "parse_trend_data_cached",
     "update_section",
+    "safe_view_render",
+    "render_friendly_error",
 ]

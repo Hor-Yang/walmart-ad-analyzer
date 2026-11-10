@@ -12,6 +12,7 @@ from frontend.views import (
     render_products_view,
     render_profit_view,
     render_ai_view,
+    render_history_view,
     render_data_hub_view,
     render_settings_view,
 )
@@ -19,8 +20,8 @@ from frontend.views import (
 
 class TestFrontendArchitecture(unittest.TestCase):
     def test_nav_modules_count(self):
-        """验证 9 大一级核心业务导航完整性"""
-        self.assertEqual(len(NAV_MODULES), 9)
+        """验证 10 大一级核心业务导航完整性（含历史对比与跨周期归档）"""
+        self.assertEqual(len(NAV_MODULES), 10)
         mod_ids = [m["id"] for m in NAV_MODULES]
         expected_ids = [
             "dashboard",
@@ -30,6 +31,7 @@ class TestFrontendArchitecture(unittest.TestCase):
             "products",
             "profitability",
             "ai_intelligence",
+            "history_diff",
             "data_hub",
             "settings",
         ]
@@ -45,6 +47,7 @@ class TestFrontendArchitecture(unittest.TestCase):
             render_products_view,
             render_profit_view,
             render_ai_view,
+            render_history_view,
             render_data_hub_view,
             render_settings_view,
         ]

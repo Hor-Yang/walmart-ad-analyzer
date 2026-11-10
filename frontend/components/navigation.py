@@ -16,6 +16,7 @@ NAV_MODULES = [
     {"id": "products", "title": "产品管理", "sub": "Products"},
     {"id": "profitability", "title": "利润分析", "sub": "Profitability"},
     {"id": "ai_intelligence", "title": "AI 决策中心", "sub": "AI Center"},
+    {"id": "history_diff", "title": "历史对比", "sub": "History & Diff"},
     {"id": "data_hub", "title": "数据中心", "sub": "Data Hub"},
     {"id": "settings", "title": "系统设置", "sub": "Settings"},
 ]
@@ -30,7 +31,7 @@ def render_sidebar_navigation() -> str:
         # Apple 风格品牌 Header：单色矢量 Logo 代替彩色 Emoji
         st.markdown(
             """
-            <div style="padding: 10px 4px 22px 4px; display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+            <div style="padding: 10px 4px 14px 4px; display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
                 <div style="width: 36px; height: 36px; border-radius: 10px; background: #0071E3; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0, 113, 227, 0.25);">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="18" y1="20" x2="18" y2="10"></line>
@@ -46,6 +47,13 @@ def render_sidebar_navigation() -> str:
             """,
             unsafe_allow_html=True,
         )
+
+        # // FIX: 租户用户身份胶囊与快捷切换通道 (Pain Point 3: 多租户隔离)
+        try:
+            from services.auth_service import render_user_profile_pill
+            render_user_profile_pill()
+        except Exception:
+            pass
 
         # 渲染 9 大单色矢量导航项（无彩色 Emoji）
         for mod in NAV_MODULES:

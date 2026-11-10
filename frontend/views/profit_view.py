@@ -12,8 +12,11 @@ from analyzer.sku_profit_model import (
     generate_sku_cost_template,
 )
 from frontend.utils.formatters import fmt_money, fmt_pct, fmt_num, fmt_ratio, safe_num_divide
+from frontend.utils.error_handler import safe_view_render
 
 
+# // FIX: 全局与模块级异常兜底装饰器，阻断 Traceback 裸露，提供生产级友好提示
+@safe_view_render("利润分析")
 def render_profit_view():
     render_page_header("利润分析", "全成本动态利润核算大盘：打通商品供应链成本与广告消耗，识别真实赚钱与失血亏损款")
 

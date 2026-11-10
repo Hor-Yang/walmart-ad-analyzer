@@ -7,8 +7,11 @@ import streamlit as st
 import pandas as pd
 from frontend.components.kpi_card import render_kpi_card, render_empty_state, render_page_header
 from analyzer.sku_profit_model import generate_sku_cost_template
+from frontend.utils.error_handler import safe_view_render
 
 
+# // FIX: 全局与模块级异常兜底装饰器，阻断 Traceback 裸露，提供生产级友好提示
+@safe_view_render("产品管理")
 def render_products_view():
     render_page_header("产品管理", "统一主商品档案库：一个 Master SKU 关联多个平台商品 ID，全生命周期与成本属性穿透")
 

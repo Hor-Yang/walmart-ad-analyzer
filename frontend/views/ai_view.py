@@ -21,7 +21,11 @@ try:
 except ImportError:
     AdDecisionEngine = None
 
+from frontend.utils.error_handler import safe_view_render
 
+
+# // FIX: 全局与模块级异常兜底装饰器，阻断 Traceback 裸露，提供生产级友好提示
+@safe_view_render("AI 决策中心")
 def render_ai_view():
     render_page_header("AI 决策中心", "跨模块企业级智能中枢：广告×库存×利润多域联动诊断、12 类根因穿透与闭环效果复盘")
 

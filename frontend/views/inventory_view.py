@@ -7,8 +7,11 @@ import streamlit as st
 import pandas as pd
 from frontend.components.kpi_card import render_kpi_card, render_empty_state, render_page_header
 from frontend.utils.formatters import safe_num_divide
+from frontend.utils.error_handler import safe_view_render
 
 
+# // FIX: 全局与模块级异常兜底装饰器，阻断 Traceback 裸露，提供生产级友好提示
+@safe_view_render("库存管理")
 def render_inventory_view():
     render_page_header("库存管理", "全链路仓储供应链监控：平台仓、第三方海外仓、国内在途海运与断货风险联动")
 

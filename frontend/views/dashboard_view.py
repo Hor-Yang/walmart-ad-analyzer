@@ -13,8 +13,11 @@ import plotly.graph_objects as go
 from frontend.components.kpi_card import render_apple_kpi_card, render_empty_state, render_page_header
 from frontend.utils.formatters import safe_num_divide, fmt_money
 from frontend.utils.data_context import filter_dataframe_by_global
+from frontend.utils.error_handler import safe_view_render
 
 
+# // FIX: 全局与模块级异常兜底装饰器，阻断 Traceback 裸露，提供生产级友好提示
+@safe_view_render("经营总览")
 def render_dashboard_view():
     # 1. 页面主标题区 (Apple 极简大排版)
     render_page_header("经营总览", "跨平台全链路经营大盘：销售、广告、利润、库存实时穿透与异常预警")
