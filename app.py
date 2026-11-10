@@ -75,6 +75,19 @@ def init_application_state():
     if "active_page" not in st.session_state:
         st.session_state["active_page"] = "dashboard"
 
+    # // FIX: 【重构目标 1】扁平化账户体系初始化，防止 downstream 模块发生 KeyError
+    if "current_user" not in st.session_state or not st.session_state["current_user"]:
+        st.session_state["current_user"] = {
+            "user_id": "usr_default",
+            "account": "seller@crossborder.bi",
+            "email": "seller@crossborder.bi",
+            "display_name": "seller@crossborder.bi",
+            "role": "seller",
+            "tenant_code": "default",
+        }
+    if "user" not in st.session_state or not st.session_state["user"]:
+        st.session_state["user"] = st.session_state["current_user"]
+
     # 若内存中无数据，安全尝试从本地缓存中热恢复
     try:
         if not any(v is not None for v in st.session_state["section_data"].values()):

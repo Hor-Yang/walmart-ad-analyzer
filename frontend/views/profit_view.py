@@ -20,6 +20,21 @@ from frontend.utils.error_handler import safe_view_render
 def render_profit_view():
     render_page_header("利润分析", "全成本动态利润核算大盘：打通商品供应链成本与广告消耗，识别真实赚钱与失血亏损款")
 
+    # // FIX: 【任务 3】业务板块逻辑释义 Expander（降低运营人员认知门槛，严格使用纯净文字，无彩色 Emoji）
+    with st.expander("[运营逻辑解读] 单位经济学、动态保本 ACoS 与全成本核算口径", expanded=False):
+        st.markdown(
+            """
+            - **严格区分指标口径**：
+              核算单件采购物流成本时，必须使用**销售件数 (Units Sold)**；核算平均客单价与转化指标时，使用**广告订单数 (Orders)**，二者严禁混淆。
+            - **广告前贡献利润 (Pre-Ad Contribution Profit)**：
+              销售额 - (采购成本 + 头程海运 + 尾程派送 + 包装损耗) × 销售件数 - 平台佣金 (销售额 × 佣金率)。代表未扣除广告费用前的真实商品毛利盘。
+            - **动态保本 ACoS (Break-even ACoS)**：
+              保本 ACoS = 广告前贡献利润 ÷ 销售额。即该 SKU 广告花费的最大容忍上限。实际 ACoS > 保本 ACoS 时即处于每卖一单亏一单的失血状态。
+            - **严肃性护栏**：
+              对于尚未在「数据中心」录入成本参数的 SKU，系统坚决不输出虚假净利润，标明「成本缺失待补录」，维护财务严谨性。
+            """
+        )
+
     sec_data = st.session_state.get("section_data", {})
     sku_cost_df = st.session_state.get("sku_cost_df")
     sku_cost_dict = st.session_state.get("sku_cost_dict", {})
@@ -74,23 +89,17 @@ def render_profit_view():
 
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
-    # 3. 利润核算公式与口径说明
+    # 3. // FIX: 【任务 1】改用 Streamlit 原生容器与排版，彻底杜绝 HTML 标签外泄
     st.markdown("#### 全链路利润核算逻辑与动态保本公式")
-    st.markdown(
-        """
-        <div class="card" style="padding: 18px 22px; margin-bottom: 16px; background: #F8F9FA;">
-            <div style="font-weight: 600; font-size: 13.5px; color: #1D1D1F; margin-bottom: 6px;">真实单位经济学核算口径规范</div>
-            <div style="font-size: 12.5px; color: #86868B; line-height: 1.7;">
-                • <strong>严格区分指标</strong>：核算单件采购物流成本使用<strong>销售件数 (Units Sold)</strong>，客单价核算使用<strong>广告订单数 (Orders)</strong>。<br/>
-                • <strong>广告前贡献利润</strong> = 销售额 - (采购成本 + 头程海运 + 尾程派送 + 包装损耗) × 销售件数 - 平台佣金 (销售额 × 佣金率)<br/>
-                • <strong>动态保本 ACoS</strong> = 广告前贡献利润 ÷ 销售额（即当前 SKU 能承受的最大广告花费比例）<br/>
-                • <strong>广告后贡献利润</strong> = 广告前贡献利润 - 广告总花费<br/>
-                • <strong>严肃性护栏</strong>：对于尚未在数据中心配置成本底表的 SKU，<strong>坚决不输出虚假净利润</strong>，系统标明“成本缺失待补录”。
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with st.container(border=True):
+        st.markdown("**真实单位经济学核算口径规范**")
+        st.caption(
+            "• 严格区分指标：核算单件采购物流成本使用销售件数 (Units Sold)，客单价核算使用广告订单数 (Orders)。\n\n"
+            "• 广告前贡献利润 = 销售额 - (采购成本 + 头程海运 + 尾程派送 + 包装损耗) × 销售件数 - 平台佣金 (销售额 × 佣金率)\n\n"
+            "• 动态保本 ACoS = 广告前贡献利润 ÷ 销售额（即当前 SKU 能承受的最大广告花费比例）\n\n"
+            "• 广告后贡献利润 = 广告前贡献利润 - 广告总花费\n\n"
+            "• 严肃性护栏：对于尚未在数据中心配置成本底表的 SKU，坚决不输出虚假净利润，系统标明「成本缺失待补录」。"
+        )
 
     # 4. SKU 利润台账明细
     st.markdown("#### 各 SKU 真实利润与动态保本台账 (先聚合后核算)")

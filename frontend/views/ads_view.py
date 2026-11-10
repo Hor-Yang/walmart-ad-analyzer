@@ -65,6 +65,19 @@ def render_ads_view():
     # 统一 Apple macOS 标题规范
     render_page_header("广告分析", "全渠道广告多维诊断：漏斗分析、精准控词、竞价阶梯、商品健康度与位置溢价优化")
 
+    # // FIX: 【任务 3】业务板块逻辑释义 Expander（降低运营人员认知门槛，严格使用纯净文字，无彩色 Emoji）
+    with st.expander("[运营逻辑解读] 广告漏斗、Halo 光环销售与精准控词打法", expanded=False):
+        st.markdown(
+            """
+            - **直接广告销售额 (Direct Sales) vs 光环销售额 (Halo Sales)**：
+              买家点击广告商品 A 后，最终下单购买了商品 A 记为 Direct 销售；若购买了同店铺下的其他商品 B，记为 Halo 销售。对于高 Halo 溢出效应的引流款，不能因单款直接 ACoS 偏高而轻易关停，需评估全店总带动效果。
+            - **精准否定 (Negative Exact) vs 词组否定 (Negative Phrase)**：
+              有点击无订单但有一定相关性的宽泛词，优先采用精准否定，避免误伤同根的长尾转化词；与产品核心类目完全不相干的错配搜索词，坚决使用词组否定切断脏流量。
+            - **自动广告 (Auto) 与手动广告 (Manual) 的闭环协同**：
+              自动广告负责宽泛拓词与算法触达；每周由「搜索词挖掘」引擎提取高投产词一键打入手动精准活动，并将低效消耗词精准否定，形成健康的闭环流量漏斗。
+            """
+        )
+
     # 1. 顶部平台切换器与参数微调
     p_col1, p_col2, p_col3 = st.columns([2, 1, 1])
     with p_col1:
@@ -149,19 +162,10 @@ def render_ads_view():
             # 沃尔玛广告总监三大核心经营决策
             st.markdown("#### 沃尔玛广告总监 · 核心决策直达")
             c_prob = exec_sum.get("core_problem_answer", "大盘运行稳定。")
-            st.markdown(
-                f"""
-                <div style="background: rgba(255, 59, 48, 0.05); border: 1px solid rgba(255, 59, 48, 0.15); border-radius: 12px; padding: 14px 18px; margin-bottom: 14px;">
-                    <div style="font-weight: 600; font-size: 13.5px; color: #DC2626; margin-bottom: 4px;">
-                        核心痛点诊断
-                    </div>
-                    <div style="font-size: 13.5px; color: #1D1D1F; line-height: 1.5;">
-                        {safe_html(c_prob)}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            # // FIX: 【任务 1】改用 Native 容器与 st.error 状态提示，彻底杜绝 HTML 标签外泄
+            with st.container(border=True):
+                st.markdown("**核心痛点诊断**")
+                st.error(str(c_prob))
 
             # 结构化决策清单
             st.markdown("##### 全量结构化决策执行指令矩阵")

@@ -15,6 +15,21 @@ from frontend.utils.error_handler import safe_view_render
 def render_inventory_view():
     render_page_header("库存管理", "全链路仓储供应链监控：平台仓、第三方海外仓、国内在途海运与断货风险联动")
 
+    # // FIX: 【任务 3】业务板块逻辑释义 Expander（降低运营人员认知门槛，严格使用纯净文字，无彩色 Emoji）
+    with st.expander("[运营逻辑解读] DOS 安全周转天数与断货断权保护联动", expanded=False):
+        st.markdown(
+            """
+            - **可售天数 (DOS, Days of Supply) 安全警戒线**：
+              DOS = 当前可用在库库存 ÷ 近 30 天日均销量。
+              - DOS < 15 天：**极度濒危**，AI 决策中枢强制拦截加价与拓词，启动提价控速与断货保护；
+              - 15 ≤ DOS < 25 天：**补货预警**，需立即向供应链下达生产或海运补货指令；
+              - 25 ≤ DOS ≤ 90 天：**健康周转区间**；
+              - DOS > 90 天：**呆滞积压**，需启动冗余促销或站外清仓，降低仓储费。
+            - **广告 × 库存 联动断货保护**：
+              Listing 一旦断货，沃尔玛搜索算法会迅速扣减商品权重。与其断货后重新花数倍广告费激活冷启动，必须在濒危期主动通过出价调降与控速保持在线连续性。
+            """
+        )
+
     sec_data = st.session_state.get("section_data", {})
     item_df = sec_data.get("ad_item")
     inventory_df = sec_data.get("inventory") or st.session_state.get("inventory_df")
@@ -96,17 +111,10 @@ def render_inventory_view():
 
     # 2. 详细库存台账与联动保护
     st.markdown("#### 各 SKU 实时库存快照与智能补货建议")
-    st.markdown(
-        """
-        <div class="card" style="padding: 16px 20px; margin-bottom: 16px; background: #F8F9FA;">
-            <div style="font-weight: 600; font-size: 13.5px; color: #1D1D1F; margin-bottom: 4px;">跨模块联动保护：广告 × 库存</div>
-            <div style="font-size: 12.5px; color: #86868B; line-height: 1.6;">
-                当某款 SKU 的<strong>预估可售天数低于 15 天</strong>时，AI 决策中枢将自动发出拦截指令：<strong>「禁止加大广告出价或拓词放量」</strong>，防止断货导致 Listing 权重断崖式下跌。
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    # // FIX: 【任务 1】改用 Streamlit 原生容器与排版，彻底杜绝 HTML 标签外泄
+    with st.container(border=True):
+        st.markdown("**跨模块联动保护：广告 × 库存**")
+        st.caption("当某款 SKU 的可售天数低于 15 天时，AI 决策中枢将自动发出拦截指令：「禁止加大广告出价或拓词放量」，防止断货导致 Listing 权重断崖式下跌。")
     st.dataframe(
         inv_df,
         column_config={

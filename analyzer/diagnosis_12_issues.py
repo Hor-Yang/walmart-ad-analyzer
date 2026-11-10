@@ -52,15 +52,15 @@ def diagnose_12_advertising_issues(
     # =========================================================================
     if camp_df is not None and not camp_df.empty:
         c_work = camp_df.copy()
-        spend_col = "花费" if "花费" in c_work.columns else ("广告花费" if "广告花费" in c_work.columns else None)
-        budget_col = "每日预算" if "每日预算" in c_work.columns else None
-        name_col = "活动名" if "活动名" in c_work.columns else ("广告活动" if "广告活动" in c_work.columns else None)
+        spend_col = next((c for c in ["花费", "广告花费", "spend", "cost"] if c in c_work.columns), None)
+        budget_col = next((c for c in ["每日预算", "预算", "budget", "daily_budget"] if c in c_work.columns), None)
+        name_col = next((c for c in ["活动名", "广告活动", "广告活动名称", "campaign", "Campaign Name", "活动名称"] if c in c_work.columns), None)
         
         if spend_col and budget_col and name_col:
             for _, r in c_work.iterrows():
                 b_val = float(r.get(budget_col, 0.0) or 0.0)
                 s_val = float(r.get(spend_col, 0.0) or 0.0)
-                c_name = str(r.get(name_col, "-"))
+                c_name = str(r.get(name_col, "-")).strip()
                 roas_val = float(r.get("ROAS", 0.0) or 0.0) if "ROAS" in r else 0.0
                 
                 # 预算撞顶且投产表现优异
@@ -68,13 +68,13 @@ def diagnose_12_advertising_issues(
                     issues.append({
                         "issue_type": "7. 预算不足 (Budget Bottleneck)",
                         "severity": "P1",
-                        "entity": f"活动: {c_name}",
-                        "description": "高投产活动预算消耗率达到或超过 90%，面临提前撞顶下线风险，白白错失黄金转化时段的优质流量",
-                        "data_evidence": f"当前预算 ${b_val:.2f}，实际消耗 ${s_val:.2f} (消耗率 {s_val/b_val*100:.1f}%)，ROAS 达 {roas_val:.2f}",
-                        "root_cause": "设置的每日预算过小，无法支撑该品在全天的自然搜索高潮期的展示需求",
+                        "entity": f"广告活动: {c_name}",
+                        "description": f"高投产活动【{c_name}】预算消耗率达到或超过 90%，面临提前撞顶下线风险，白白错失黄金转化时段的优质流量",
+                        "data_evidence": f"广告活动【{c_name}】当前预算 ${b_val:.2f}，实际消耗 ${s_val:.2f} (消耗率 {s_val/b_val*100:.1f}%)，ROAS 达 {roas_val:.2f}",
+                        "root_cause": f"活动【{c_name}】设置的每日预算过小，高转化时段 (ROAS {roas_val:.2f}) 预算撞顶提前下线，无法支撑全天搜索需求",
                         "confidence": "高置信度",
-                        "action": f"建议将该活动日预算提升 25%~40%（建议提至 ${(b_val*1.3):.2f}），释放全时段高投产潜力",
-                        "expected_impact": "延长在线展示时长，预估出单量提升 20%~35%，保持优质投产水平",
+                        "action": f"建议将广告活动【{c_name}】的日预算提升 25%~40%（建议提至 ${(b_val*1.3):.2f}），释放全时段高投产潜力",
+                        "expected_impact": f"延长活动【{c_name}】在线展示时长，预估出单量提升 20%~35%，保持优质投产水平",
                         "observation_window": "3~5 个自然日",
                     })
 
@@ -83,31 +83,37 @@ def diagnose_12_advertising_issues(
     # =========================================================================
     if st_df is not None and not st_df.empty and "搜索词" in st_df.columns:
         s_work = st_df.copy()
-        s_col = "广告花费" if "广告花费" in s_work.columns else ("花费" if "花费" in s_work.columns else None)
-        c_col = "点击" if "点击" in s_work.columns else None
-        o_col = "广告订单" if "广告订单" in s_work.columns else ("订单" if "订单" in s_work.columns else None)
+        s_col = next((c for c in ["广告花费", "花费", "spend", "cost"] if c in s_work.columns), None)
+        c_col = next((c for c in ["点击", "点击量", "clicks"] if c in s_work.columns), None)
+        o_col = next((c for c in ["广告订单", "订单", "orders", "order"] if c in s_work.columns), None)
+        c_name_col = next((c for c in ["广告活动", "广告活动名称", "campaign", "Campaign Name"] if c in s_work.columns), None)
         
         if s_col and c_col and o_col:
-            # 聚合搜索词
-            agg_st = s_work.groupby("搜索词", as_index=False).agg({
+            # 聚合搜索词与来源活动
+            group_cols = ["搜索词"]
+            if c_name_col:
+                group_cols.append(c_name_col)
+            agg_st = s_work.groupby(group_cols, as_index=False).agg({
                 s_col: "sum", c_col: "sum", o_col: "sum"
             })
             # 严重烧钱 0 转化
             burning_st = agg_st[(agg_st[s_col] >= 20.0) & (agg_st[o_col] == 0)].sort_values(s_col, ascending=False)
             for _, r in burning_st.head(5).iterrows():
-                term = r["搜索词"]
+                term = str(r["搜索词"]).strip()
+                camp_ref = str(r.get(c_name_col, "通用活动")).strip() if c_name_col else "通用活动"
                 sp = float(r[s_col])
                 cl = int(r[c_col])
+                cpc_val = (sp / cl) if cl > 0 else 0.0
                 issues.append({
                     "issue_type": "6. 有点击无订单 (Clicks Without Orders)",
                     "severity": "P0",
-                    "entity": f"搜索词: {term}",
-                    "description": f"搜索词累计获得大量付费点击但转化完全为 0，持续侵蚀广告预算",
-                    "data_evidence": f"累计花费 ${sp:.2f}，点击 {cl} 次，0 订单，点击成本 CPC ${(sp/cl):.2f}",
-                    "root_cause": "买家搜索意图与商品属性不符（宽泛大词误触），或该词对应的落地页价格/评价在竞品面前缺乏吸引力",
+                    "entity": f"搜索词: {term} (活动: {camp_ref})",
+                    "description": f"搜索词「{term}」在活动【{camp_ref}】中累计获得大量付费点击但转化完全为 0，持续侵蚀广告预算",
+                    "data_evidence": f"在广告活动【{camp_ref}】中，搜索词「{term}」累计花费 ${sp:.2f}，点击 {cl} 次，0 订单，点击成本 CPC ${cpc_val:.2f}",
+                    "root_cause": f"搜索词「{term}」在活动【{camp_ref}】中买家搜索意图与落地页商品属性不符（宽泛大词误触或定价缺乏竞争力），转化率严重偏离行业均值",
                     "confidence": "高置信度",
-                    "action": f"立即在所在活动/广告组中添加精准否定 (Negative Exact)，阻断无益流量流失",
-                    "expected_impact": f"直接遏制资金失血，每月可节省至少 ${sp*2:,.2f} 的无效支出",
+                    "action": f"立即在广告活动【{camp_ref}】中对搜索词「{term}」添加精准否定 (Negative Exact)，阻断无益流量流失",
+                    "expected_impact": f"直接遏制该词失血，每月可为活动【{camp_ref}】节省约 ${sp*2:,.2f} 的无效支出",
                     "observation_window": "即刻生效，观察 7 天无效花费是否归零",
                 })
 
@@ -127,20 +133,20 @@ def diagnose_12_advertising_issues(
             # ACoS 严重穿透保本线
             bleeding_kws = k_work[(k_work["广告花费"] >= 25.0) & (k_work["_acos"] > breakeven_acos * 1.3)].sort_values("广告花费", ascending=False)
             for _, r in bleeding_kws.head(3).iterrows():
-                kw_str = r["关键词"]
-                camp_str = r.get("所在活动", r.get("广告活动", "-"))
+                kw_str = str(r["关键词"]).strip()
+                camp_str = str(r.get("所在活动", r.get("广告活动", r.get("广告活动名称", "通用活动")))).strip()
                 act_acos = float(r["_acos"] or 0.0)
                 cpc_val = float(r["_cpc"] or 0.0)
                 issues.append({
                     "issue_type": "5. ACoS 过高击穿保本线 (Excessive ACoS)",
                     "severity": "P0",
                     "entity": f"关键词: {kw_str} (活动: {camp_str})",
-                    "description": "关键词产出投产失衡，广告费远超商品毛利率安全垫，每卖出一单都在实质性净亏损",
-                    "data_evidence": f"实际 ACoS {act_acos*100:.1f}% 严重超出保本红线 ({breakeven_acos*100:.1f}%)，CPC 为 ${cpc_val:.2f}",
-                    "root_cause": "竞价设置过高，且转化率未能跟上出价成本；竞价拍卖场过度溢价",
+                    "description": f"关键词「{kw_str}」在活动【{camp_str}】中投产失衡，广告费远超商品毛利率安全垫，每出1单均处于实质净亏损",
+                    "data_evidence": f"广告活动【{camp_str}】的关键词「{kw_str}」实际 ACoS {act_acos*100:.1f}% 严重超出保本红线 ({breakeven_acos*100:.1f}%)，CPC 为 ${cpc_val:.2f}",
+                    "root_cause": f"活动【{camp_str}】中关键词「{kw_str}」竞价设置过高，转化率未能跟上出价成本，竞价拍卖场过度溢价",
                     "confidence": "高置信度",
-                    "action": "立即将实际竞价下调 20%~30%，若下调后仍持续亏损则果断暂停该词",
-                    "expected_impact": "拉低综合 CPC，将该词 ACoS 压降回目标线以内",
+                    "action": f"建议将活动【{camp_str}】中关键词「{kw_str}」的当前实际竞价立即下调 20%~30%，若下调后仍持续亏损则果断暂停",
+                    "expected_impact": f"拉低该词综合 CPC，将活动【{camp_str}】中该词 ACoS 压降回目标线以内",
                     "observation_window": "7 个自然日",
                 })
 
@@ -159,21 +165,22 @@ def diagnose_12_advertising_issues(
             # 高曝光低点击 (CTR 严重偏低 < 0.2%)
             low_ctr_items = item_work[(item_work["曝光量"] >= 5000) & (item_work["_ctr"] < 0.0020)].sort_values("曝光量", ascending=False)
             for _, r in low_ctr_items.head(3).iterrows():
-                item_id = str(r.get("项目ID", r.get("Item Id", "商品位")))
-                sku_str = sku_map.get(item_id, item_id) if sku_map else item_id
+                item_id = str(r.get("项目ID", r.get("Item Id", r.get("item_id", "商品位")))).strip()
+                sku_str = str(sku_map.get(item_id, item_id) if sku_map else item_id).strip()
+                camp_name = str(r.get("广告活动", r.get("广告活动名称", r.get("Campaign Name", "主广告活动")))).strip()
                 impr = int(r["曝光量"])
                 cl = int(r["点击"])
                 ctr_v = float(r["_ctr"] or 0.0)
                 issues.append({
                     "issue_type": "2. 点击率严重偏低 (Low CTR)",
                     "severity": "P1",
-                    "entity": f"商品: {sku_str} ({item_id})",
-                    "description": "商品获得充沛曝光展示，但买家点击欲望极低，大量浪费宝贵的首屏曝光权重",
-                    "data_evidence": f"累计曝光 {impr:,} 次，仅产生点击 {cl} 次，CTR 仅为 {ctr_v*100:.2f}% (行业标准 ≥ 0.35%)",
-                    "root_cause": "商品主图视觉冲击力弱、标题前置卖点不清晰、前台价格在搜索网格中缺乏竞争力，或评分星级较低",
+                    "entity": f"商品: {sku_str} (项目ID: {item_id} | 活动: {camp_name})",
+                    "description": f"商品【{sku_str}】在活动【{camp_name}】中获得充沛曝光展示，但买家点击欲望极低，大量浪费宝贵的首屏曝光权重",
+                    "data_evidence": f"商品【{sku_str}】在活动【{camp_name}】中累计曝光 {impr:,} 次，仅产生点击 {cl} 次，CTR 仅为 {ctr_v*100:.2f}% (行业标准 ≥ 0.35%)",
+                    "root_cause": f"商品【{sku_str}】主图视觉冲击力弱、标题前置卖点不清晰、前台价格在搜索网格中缺乏竞争力，或评分星级较低",
                     "confidence": "中置信度",
-                    "action": "优先重构主图白底场景图，突出差异化功能标；核查竞品同款促销价格，并在广告中提升搜索位（Search In-Grid）溢价以获得更优版位",
-                    "expected_impact": "预计 CTR 提升至 0.35%~0.50%，点击量增长 50% 以上",
+                    "action": f"优先重构商品【{sku_str}】主图白底场景图，突出差异化功能标；核查同款促销价格，并在活动【{camp_name}】中优化搜索网格溢价",
+                    "expected_impact": f"预计商品【{sku_str}】CTR 提升至 0.35%~0.50%，点击量增长 50% 以上",
                     "observation_window": "7~14 个自然日",
                 })
 
@@ -187,19 +194,48 @@ def diagnose_12_advertising_issues(
             p_df, _ = calculate_sku_profit_analytics(ad_item_df, sku_cost_dict, default_margin=breakeven_acos)
             loss_skus = p_df[p_df["盈利状态"] == "🚨 真实净亏损"]
             for _, r in loss_skus.head(2).iterrows():
-                sku_code = r["SKU"]
+                sku_code = str(r["SKU"]).strip()
                 loss_amt = float(r["广告后真实净利"])
                 issues.append({
                     "issue_type": "10. 商品综合竞争力不足导致失血 (Listing Weakness)",
                     "severity": "P0",
                     "entity": f"SKU: {sku_code}",
-                    "description": "扣除采购、头程与尾程运费及佣金后，该 SKU 广告投入导致实质性净现金亏损，属于不可持续运营品",
-                    "data_evidence": f"广告销售额 ${r['广告销售额']:,.2f}，花费 ${r['广告花费']:,.2f}，真实净亏损 ${abs(loss_amt):,.2f}",
-                    "root_cause": "单位毛利额无法承受当前流量成本；转化率不足以抵御高 CPC",
+                    "description": f"扣除采购、头程与尾程运费及佣金后，商品【{sku_code}】广告投入导致实质性净现金亏损，属于不可持续运营品",
+                    "data_evidence": f"商品【{sku_code}】广告销售额 ${r['广告销售额']:,.2f}，花费 ${r['广告花费']:,.2f}，扣除全部成本后真实净亏损 ${abs(loss_amt):,.2f}",
+                    "root_cause": f"商品【{sku_code}】单位毛利额无法承受当前流量成本；转化率不足以抵御高 CPC",
                     "confidence": "高置信度",
-                    "action": "建议对该 SKU 广告降权，优先优化商品页面转化率或提升售价，若为淘汰老品应坚决削减预算",
-                    "expected_impact": "立即停止每月的净现金流失",
+                    "action": f"建议对失血商品【{sku_code}】广告降权，优先优化商品页面转化率或提升售价，若为淘汰老品应坚决削减预算",
+                    "expected_impact": f"立即停止商品【{sku_code}】每月的净现金流失",
                     "observation_window": "5~7 个自然日",
+                })
+
+    # =========================================================================
+    # 问题 12. 广告与库存不匹配 (出价引擎护栏联动)
+    # =========================================================================
+    inv_df = section_data.get("inventory")
+    if inv_df is not None and isinstance(inv_df, pd.DataFrame) and not inv_df.empty:
+        sku_c = next((c for c in ["SKU", "sku", "统一商品编码 (Master SKU)"] if c in inv_df.columns), None)
+        dos_c = next((c for c in ["预估可售天数 (DOS)", "DOS", "可售天数"] if c in inv_df.columns), None)
+        stock_c = next((c for c in ["总可用在库", "在库库存", "库存"] if c in inv_df.columns), None)
+        if sku_c and dos_c:
+            inv_work = inv_df.copy()
+            inv_work[dos_c] = pd.to_numeric(inv_work[dos_c], errors="coerce").fillna(999.0)
+            low_stock = inv_work[inv_work[dos_c] < 15.0].sort_values(dos_c)
+            for _, r in low_stock.head(2).iterrows():
+                s_name = str(r[sku_c]).strip()
+                dos_v = float(r[dos_c])
+                stk_v = int(r.get(stock_c, 0)) if stock_c else 0
+                issues.append({
+                    "issue_type": "12. 广告与库存不匹配断货风险 (Out-of-Stock Risk)",
+                    "severity": "P0",
+                    "entity": f"SKU: {s_name} (库存DOS: {dos_v:.1f}天)",
+                    "description": f"商品【{s_name}】库存告急，可售天数严重低于 15 天安全线，继续推流将引发断货降权！",
+                    "data_evidence": f"商品【{s_name}】当前在库仅 {stk_v} 件，预计可售天数 (DOS) 仅 {dos_v:.1f} 天 (< 15天)",
+                    "root_cause": f"供应链补货未及时入仓，若广告维持当前消耗速度，将在 {dos_v:.0f} 天内彻底断货",
+                    "confidence": "高置信度",
+                    "action": f"【护栏拦截】严禁对商品【{s_name}】执行任何加预算或提价拓词！建议调高售价 10% 或下调出价 25% 控速平稳过渡",
+                    "expected_impact": f"避免商品【{s_name}】断货导致历史权重与关键词排名清零",
+                    "observation_window": "即刻执行，直至新批次补货入库",
                 })
 
     # 兜底默认健康建议（当数据指标全优时）

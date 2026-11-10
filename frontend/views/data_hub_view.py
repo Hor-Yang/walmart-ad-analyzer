@@ -220,17 +220,9 @@ def render_data_hub_view():
 
         t1, t2, t3 = st.columns(3)
         with t1:
-            st.markdown(
-                """
-                <div class="card" style="padding: 20px; height: 100%;">
-                    <div style="font-size: 15px; font-weight: 600; color: #1D1D1F; margin-bottom: 6px;">Item ID ↔ SKU 映射模板</div>
-                    <div style="font-size: 13px; color: #86868B; line-height: 1.5;">
-                        打通各平台数字 ID 与企业统一主 SKU 编码，消除未命名商品。
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            with st.container(border=True):
+                st.markdown("**Item ID ↔ SKU 映射模板**")
+                st.caption("打通各平台数字 ID 与企业统一主 SKU 编码，消除未命名商品。")
             sku_tmpl_bytes = generate_sku_template()
             st.download_button(
                 "下载 SKU 映射表模板",
@@ -251,17 +243,9 @@ def render_data_hub_view():
                     st.rerun()
 
         with t2:
-            st.markdown(
-                """
-                <div class="card" style="padding: 20px; height: 100%;">
-                    <div style="font-size: 15px; font-weight: 600; color: #1D1D1F; margin-bottom: 6px;">SKU 供应链成本表模板</div>
-                    <div style="font-size: 13px; color: #86868B; line-height: 1.5;">
-                        包含采购价、头程海运、尾程履约和平台佣金，用于动态保本线计算。
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            with st.container(border=True):
+                st.markdown("**SKU 供应链成本表模板**")
+                st.caption("包含采购价、头程海运、尾程履约和平台佣金，用于动态保本线计算。")
             cost_tmpl_bytes = generate_sku_cost_template()
             st.download_button(
                 "下载 SKU 成本底表模板",
@@ -283,17 +267,9 @@ def render_data_hub_view():
                     st.rerun()
 
         with t3:
-            st.markdown(
-                """
-                <div class="card" style="padding: 20px; height: 100%;">
-                    <div style="font-size: 15px; font-weight: 600; color: #1D1D1F; margin-bottom: 6px;">每日多期走势报表模板</div>
-                    <div style="font-size: 13px; color: #86868B; line-height: 1.5;">
-                        日度级别销售与花费走势，支持按自然日精准环比与归因。
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            with st.container(border=True):
+                st.markdown("**每日多期走势报表模板**")
+                st.caption("日度级别销售与花费走势，支持按自然日精准环比与归因。")
             daily_tmpl_bytes = generate_daily_trend_template()
             st.download_button(
                 "下载日度趋势报表模板",

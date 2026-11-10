@@ -13,25 +13,22 @@ import streamlit as st
 
 def render_page_header(title: str, subtitle: str, badge: Optional[str] = None):
     """
-    // FIX: 渲染全系统绝对统一的 Apple 极简标题区 (彻底移除散乱 Emoji，统一排版与层级)
+    // FIX: 【重构目标 2】修复 HTML 代码外泄 Bug：
+    // 根本原因：多行字符串内嵌 4 个以上前导空格时，Markdown 引擎会将其误判为缩进代码块 (<pre><code>)，导致 HTML 源码赤裸泄露。
+    // 解决方案：移除多行前导缩进，采用单行紧凑拼接并确保传入 unsafe_allow_html=True。
     """
     safe_title = html.escape(str(title))
     safe_sub = html.escape(str(subtitle))
     badge_html = f'<span class="apple-badge badge-apple-blue" style="margin-left: 10px; font-size: 12px; vertical-align: middle;">{html.escape(str(badge))}</span>' if badge else ""
-    st.markdown(
-        f"""
-        <div style="margin-bottom: 24px;">
-            <div style="font-size: 26px; font-weight: 700; color: #1D1D1F; letter-spacing: -0.03em; margin-bottom: 4px; display: flex; align-items: center;">
-                <span>{safe_title}</span>
-                {badge_html}
-            </div>
-            <div style="font-size: 13.5px; color: #86868B; font-weight: 400;">
-                {safe_sub}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    header_html = (
+        f'<div style="margin-bottom: 24px;">'
+        f'<div style="font-size: 26px; font-weight: 700; color: #1D1D1F; letter-spacing: -0.03em; margin-bottom: 4px; display: flex; align-items: center;">'
+        f'<span>{safe_title}</span>{badge_html}'
+        f'</div>'
+        f'<div style="font-size: 13.5px; color: #86868B; font-weight: 400;">{safe_sub}</div>'
+        f'</div>'
     )
+    st.markdown(header_html, unsafe_allow_html=True)
 
 
 def render_apple_kpi_card(
@@ -58,19 +55,15 @@ def render_apple_kpi_card(
         safe_sub = html.escape(str(sub_title))
         sub_html = f'<div style="font-size: 12px; color: #86868B; margin-top: 6px;">{safe_sub}</div>'
 
-    st.markdown(
-        f"""
-        <div class="card" style="margin-bottom: 0px; height: 100%;">
-            <div class="kpi-header">
-                <span class="kpi-label">{safe_label}</span>
-                {badge_html}
-            </div>
-            <div class="kpi-value">{safe_value}</div>
-            {sub_html}
-        </div>
-        """,
-        unsafe_allow_html=True,
+    # // FIX: 【任务 1】紧凑拼接无前导缩进 HTML，彻底杜绝 Markdown 4空格缩进误判为代码块外泄
+    card_html = (
+        f'<div class="card" style="margin-bottom: 0px; height: 100%;">'
+        f'<div class="kpi-header"><span class="kpi-label">{safe_label}</span>{badge_html}</div>'
+        f'<div class="kpi-value">{safe_value}</div>'
+        f'{sub_html}'
+        f'</div>'
     )
+    st.markdown(card_html, unsafe_allow_html=True)
 
 
 def render_kpi_card(
@@ -178,18 +171,15 @@ def render_empty_state(
     k_type = icon_type.lower() if isinstance(icon_type, str) else "chart"
     svg_icon = _SVG_ICONS.get(k_type, _SVG_ICONS["chart"])
     
-    st.markdown(
-        f"""
-        <div class="card" style="padding: 56px 24px; text-align: center; margin: 20px 0;">
-            <div style="width: 54px; height: 54px; margin: 0 auto 16px auto; border-radius: 14px; background: #F5F5F7; display: flex; align-items: center; justify-content: center;">
-                {svg_icon}
-            </div>
-            <div style="font-size: 18px; font-weight: 600; color: #1D1D1F; margin-bottom: 6px; letter-spacing: -0.01em;">{safe_title}</div>
-            <div style="font-size: 13.5px; color: #86868B; max-width: 440px; margin: 0 auto 22px auto; line-height: 1.6;">{safe_desc}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    # // FIX: 【任务 1】紧凑拼接无前导缩进 HTML，防止空状态组件发生 HTML 代码泄露
+    empty_html = (
+        f'<div class="card" style="padding: 56px 24px; text-align: center; margin: 20px 0;">'
+        f'<div style="width: 54px; height: 54px; margin: 0 auto 16px auto; border-radius: 14px; background: #F5F5F7; display: flex; align-items: center; justify-content: center;">{svg_icon}</div>'
+        f'<div style="font-size: 18px; font-weight: 600; color: #1D1D1F; margin-bottom: 6px; letter-spacing: -0.01em;">{safe_title}</div>'
+        f'<div style="font-size: 13.5px; color: #86868B; max-width: 440px; margin: 0 auto 22px auto; line-height: 1.6;">{safe_desc}</div>'
+        f'</div>'
     )
+    st.markdown(empty_html, unsafe_allow_html=True)
     
     if action_label and action_key:
         col1, col2, col3 = st.columns([1.2, 1, 1.2])

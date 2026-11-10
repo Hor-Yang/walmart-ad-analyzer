@@ -48,14 +48,14 @@ def render_sidebar_navigation() -> str:
             unsafe_allow_html=True,
         )
 
-        # // FIX: 租户用户身份胶囊与快捷切换通道 (Pain Point 3: 多租户隔离)
+        # // FIX: 【重构目标 1】极简单用户账户信息卡片（仅展示头像、账号与退出登录按钮，彻底移除复杂 RBAC 与多租户切换 UI）
         try:
             from services.auth_service import render_user_profile_pill
             render_user_profile_pill()
         except Exception:
             pass
 
-        # 渲染 9 大单色矢量导航项（无彩色 Emoji）
+        # 渲染 10 大单色矢量导航项（无彩色 Emoji）
         for mod in NAV_MODULES:
             mod_id = mod["id"]
             is_active = st.session_state["active_page"] == mod_id

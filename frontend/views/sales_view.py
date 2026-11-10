@@ -16,6 +16,19 @@ from frontend.utils.error_handler import safe_view_render
 def render_sales_view():
     render_page_header("销售分析", "全渠道多店铺销售穿透：GMV、出单结构、退款率、自然销售与广告销售口径对齐")
 
+    # // FIX: 【任务 3】业务板块逻辑释义 Expander（降低运营人员认知门槛，严格使用纯净文字，无彩色 Emoji）
+    with st.expander("[运营逻辑解读] 销售归因口径、自然流量杠杆与客单价分析", expanded=False):
+        st.markdown(
+            """
+            - **自然销售额 (Organic Sales) 与广告杠杆**：
+              自然销售 = 店铺总 GMV - 广告归因销售额。健康的成熟期产品自然出单占比通常应达到 60%~80% 以上。如果广告出单占比超过 70%，说明商品过度依赖付费流量，Listing 自然权重与关键词自然排名亟待提升。
+            - **客单价 (AOV) 波动监测**：
+              平均客单价 (AOV) = 销售总额 ÷ 成交订单数。若客单价骤降，需排查是否有低价配件走量、满减折扣设置错误或主推 SKU 结构偏移。
+            - **Walmart 广告归因窗口**：
+              Walmart 采用 3 天 / 14 天 Last-Touch 归因。买家点击广告后 3 天或 14 天内的下单均会被记为广告归因销售，跨期核对财务总账时需注意归因漂移。
+            """
+        )
+
     sec_data = st.session_state.get("section_data", {})
     daily_trend_df = st.session_state.get("daily_trend_df")
     item_df = sec_data.get("ad_item")
@@ -112,19 +125,14 @@ def render_sales_view():
 
     with s_col2:
         st.markdown("#### 跨平台统计口径差异说明")
-        st.markdown(
-            """
-            <div class="card" style="padding: 18px 22px; height: 260px; background: #F8F9FA;">
-                <div style="font-weight: 600; font-size: 13.5px; color: #1D1D1F; margin-bottom: 6px;">统计口径与归因窗口保护机制</div>
-                <div style="font-size: 12.5px; color: #86868B; line-height: 1.6;">
-                    • <strong>Walmart 平台</strong>：广告归因窗口通常为 3 天 / 14 天 Click-Through 归因，采用 Last Touch 模型。<br/>
-                    • <strong>Wayfair / eBay</strong>：采用订单发货口径与净销售口径（需扣除平台代收运费）。<br/>
-                    • <strong>系统规范</strong>：跨平台聚合大盘时，<strong>禁止将不同归因窗口的数字简单粗暴累加</strong>，本平台已对销售与广告口径做严格隔离展示。
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        # // FIX: 【任务 1】改用 Streamlit 原生容器与排版，彻底杜绝 HTML 标签外泄
+        with st.container(border=True):
+            st.markdown("**统计口径与归因窗口保护机制**")
+            st.caption(
+                "• Walmart 平台：广告归因窗口通常为 3 天 / 14 天 Click-Through 归因，采用 Last Touch 模型。\n\n"
+                "• Wayfair / eBay：采用订单发货口径与净销售口径（需扣除平台代收运费）。\n\n"
+                "• 系统规范：跨平台聚合大盘时，禁止将不同归因窗口的数字简单粗暴累加，本平台已对销售与广告口径做严格隔离展示。"
+            )
 
     # 3. 商品销售贡献度榜单
     st.markdown("#### 商品销售表现排行 (Top SKUs by Sales)")

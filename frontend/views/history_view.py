@@ -224,43 +224,34 @@ def render_history_view():
 
         st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
-        # 2. 治愈 SKU 与恶化预警卡片
+        # 2. // FIX: 【任务 1】改用 Native st.container 容器与纯净标题，彻底杜绝 HTML 标签外泄与代码泄漏
         cured_c1, cured_c2 = st.columns(2)
         with cured_c1:
             c_count = deltas["cured_skus_count"]
-            st.markdown(
-                f"""
-                <div class="card" style="padding: 18px 22px; height: 100%;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <span style="font-size: 14.5px; font-weight: 600; color: #1D1D1F;">🎉 成功止血与治愈 SKU</span>
-                        <span class="apple-badge badge-apple-green">{c_count} 款已治愈</span>
-                    </div>
-                    <div style="font-size: 13px; color: #86868B; line-height: 1.6;">
-                        在基准期处于严重失血/保本击穿，但在新批次中投产比明显回升或无效消耗得到有效遏制的商品：<br/>
-                        <strong style="color: #059669;">{', '.join(deltas['cured_skus']) if deltas['cured_skus'] else '暂无严重失血商品（前期运营较稳健）'}</strong>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            with st.container(border=True):
+                head1, head2 = st.columns([3, 1])
+                with head1:
+                    st.markdown("**成功止血与治愈 SKU**")
+                with head2:
+                    st.caption(f"{c_count} 款已治愈")
+                st.caption("在基准期处于严重失血/保本击穿，但在新批次中投产比明显回升或无效消耗得到有效遏制的商品：")
+                cured_text = ", ".join(deltas["cured_skus"]) if deltas["cured_skus"] else "暂无严重失血商品（前期运营较稳健）"
+                st.success(cured_text)
+
         with cured_c2:
             d_count = deltas["deteriorated_count"]
-            d_badge = "badge-apple-red" if d_count > 0 else "badge-apple-green"
-            st.markdown(
-                f"""
-                <div class="card" style="padding: 18px 22px; height: 100%;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <span style="font-size: 14.5px; font-weight: 600; color: #1D1D1F;">⚠️ 需关注的新增恶化 SKU</span>
-                        <span class="apple-badge {d_badge}">{d_count} 款需排查</span>
-                    </div>
-                    <div style="font-size: 13px; color: #86868B; line-height: 1.6;">
-                        在基准期健康，但在对比期因出价过高或转化受阻导致失血的商品：<br/>
-                        <strong style="color: #DC2626;">{', '.join(deltas['deteriorated_skus']) if deltas['deteriorated_skus'] else '未发现恶化商品，大盘表现平稳'}</strong>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            with st.container(border=True):
+                head1, head2 = st.columns([3, 1])
+                with head1:
+                    st.markdown("**需关注的新增恶化 SKU**")
+                with head2:
+                    st.caption(f"{d_count} 款需排查")
+                st.caption("在基准期健康，但在对比期因出价过高或转化受阻导致失血的商品：")
+                deteriorated_text = ", ".join(deltas["deteriorated_skus"]) if deltas["deteriorated_skus"] else "未发现恶化商品，大盘表现平稳"
+                if d_count > 0:
+                    st.error(deteriorated_text)
+                else:
+                    st.success(deteriorated_text)
 
         st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 

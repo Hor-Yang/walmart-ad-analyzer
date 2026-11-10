@@ -101,68 +101,100 @@ def get_auth_service() -> AuthService:
 
 def get_current_user() -> Dict[str, Any]:
     """
-    // FIX: 获取当前会话登录的用户身份，未登录时默认使用开箱即用的 admin 身份保证零阻断
+    // FIX: 【重构目标 1】极简化单层账户读取，统一存取 st.session_state['current_user'] 并做好兼容兜底
     """
-    if "user" not in st.session_state or not st.session_state["user"]:
-        auth = get_auth_service()
-        default_user = auth.get_user_by_id("usr_admin") or {
-            "user_id": "usr_admin",
-            "username": "admin",
-            "display_name": "主管理员 (Admin)",
-            "role": "admin",
-            "tenant_code": "org_01",
+    curr = st.session_state.get("current_user") or st.session_state.get("user")
+    if not curr or not isinstance(curr, dict):
+        curr = {
+            "user_id": "usr_default",
+            "account": "seller@crossborder.bi",
+            "email": "seller@crossborder.bi",
+            "display_name": "seller@crossborder.bi",
+            "role": "seller",
+            "tenant_code": "default",
         }
-        st.session_state["user"] = default_user
-    return st.session_state["user"]
+        st.session_state["current_user"] = curr
+        st.session_state["user"] = curr
+    return curr
+
+
+def login_user(account: str) -> Dict[str, Any]:
+    """
+    // FIX: 【重构目标 1】扁平化登录凭证：仅需邮箱或手机号即可快速完成单层账户校验
+    """
+    acc = str(account).strip()
+    safe_id = "usr_" + hashlib.md5(acc.encode("utf-8")).hexdigest()[:8]
+    user_data = {
+        "user_id": safe_id,
+        "account": acc,
+        "email": acc,
+        "display_name": acc,
+        "role": "seller",
+        "tenant_code": "default",
+    }
+    st.session_state["current_user"] = user_data
+    st.session_state["user"] = user_data
+    return user_data
+
+
+def logout_user():
+    """
+    // FIX: 【重构目标 1】退出当前登录账号
+    """
+    st.session_state["current_user"] = None
+    st.session_state["user"] = None
 
 
 def render_user_profile_pill():
     """
-    // FIX: 在侧边栏渲染符合 Apple 设计规范的租户用户胶囊与快捷切换通道
+    // FIX: 【重构目标 1】侧边栏极简展示：
+    // 1. 彻底移除“主管理员”、“角色ID”、“切换租户上下文”等复杂的 RBAC 组件与下拉选择框
+    // 2. 仅展示清爽的用户首字母 Avatar、当前登录的邮箱/手机号与退出登录按钮
     """
-    user = get_current_user()
-    auth = get_auth_service()
-    all_users = auth.list_users()
+    curr = st.session_state.get("current_user") or st.session_state.get("user")
 
-    display_name = user.get("display_name", "管理员")
-    role_name = "系统主管" if user.get("role") == "admin" else "运营分析师"
-    user_initial = display_name[:1].upper()
+    if curr and isinstance(curr, dict) and curr.get("account"):
+        account_str = str(curr.get("account") or curr.get("email") or "seller@crossborder.bi").strip()
+        avatar_char = account_str[:1].upper() if account_str else "S"
 
-    st.markdown(
-        f"""
-        <div style="padding: 10px 14px; background: rgba(0, 0, 0, 0.02); border-radius: 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; border: 1px solid rgba(0, 0, 0, 0.04);">
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <div style="width: 32px; height: 32px; border-radius: 50%; background: #E8F2FE; color: #0071E3; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center;">
-                    {user_initial}
-                </div>
-                <div>
-                    <div style="font-size: 12.5px; font-weight: 600; color: #1D1D1F; line-height: 1.2;">{display_name}</div>
-                    <div style="font-size: 11px; color: #86868B;">ID: {user.get('user_id')} · {role_name}</div>
+        st.markdown(
+            f"""
+            <div style="padding: 10px 14px; background: rgba(0, 0, 0, 0.02); border-radius: 12px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; border: 1px solid rgba(0, 0, 0, 0.04);">
+                <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
+                    <div style="width: 32px; height: 32px; min-width: 32px; border-radius: 50%; background: #E8F2FE; color: #0071E3; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center;">
+                        {avatar_char}
+                    </div>
+                    <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        <div style="font-size: 12.5px; font-weight: 600; color: #1D1D1F; line-height: 1.2; overflow: hidden; text-overflow: ellipsis;">{account_str}</div>
+                        <div style="font-size: 11px; color: #059669; font-weight: 500;">在线</div>
+                    </div>
                 </div>
             </div>
-            <span class="apple-badge badge-apple-green" style="font-size: 10px; padding: 2px 7px;">在线</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    with st.expander("👤 切换工作空间账号", expanded=False):
-        user_names = [f"{u['display_name']} ({u['username']})" for u in all_users]
-        curr_idx = 0
-        for i, u in enumerate(all_users):
-            if u["user_id"] == user["user_id"]:
-                curr_idx = i
-                break
-
-        sel_user_label = st.selectbox(
-            "选择当前租户用户",
-            user_names,
-            index=curr_idx,
-            key="auth_switch_user_sel",
-            label_visibility="collapsed"
+            """,
+            unsafe_allow_html=True,
         )
-        if st.button("确认切换租户上下文", key="btn_confirm_switch_user", use_container_width=True):
-            chosen = all_users[user_names.index(sel_user_label)]
-            st.session_state["user"] = chosen
-            st.toast(f"已成功切换至用户：{chosen['display_name']}（多租户数据已隔离加载）", icon="🎉")
+        if st.button("退出登录", key="btn_logout_user", use_container_width=True):
+            logout_user()
             st.rerun()
+    else:
+        # 未登录时展示极简邮箱/手机号输入框
+        st.markdown(
+            """
+            <div style="padding: 8px 4px 6px 4px; font-size: 12px; font-weight: 600; color: #1D1D1F;">
+                运营工作台登录
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        acc_input = st.text_input(
+            "账号输入",
+            placeholder="输入邮箱或手机号",
+            key="input_flat_account",
+            label_visibility="collapsed",
+        )
+        if st.button("一键登录", type="primary", use_container_width=True, key="btn_flat_login"):
+            if acc_input.strip():
+                login_user(acc_input.strip())
+                st.rerun()
+            else:
+                st.caption("请输入有效的手机号或邮箱")

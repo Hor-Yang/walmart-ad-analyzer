@@ -19,8 +19,22 @@ from frontend.utils.error_handler import safe_view_render
 # // FIX: 全局与模块级异常兜底装饰器，阻断 Traceback 裸露，提供生产级友好提示
 @safe_view_render("经营总览")
 def render_dashboard_view():
-    # 1. 页面主标题区 (Apple 极简大排版)
-    render_page_header("经营总览", "跨平台全链路经营大盘：销售、广告、利润、库存实时穿透与异常预警")
+    # 1. // FIX: 【重构目标 2】弃用硬编码 HTML 拼接，改用 Streamlit 原生 Typography API，彻底消除 HTML 代码外泄 Bug
+    st.subheader("经营总览")
+    st.caption("跨平台全链路经营大盘：销售、广告、利润、库存实时穿透与异常预警")
+
+    # // FIX: 【任务 3】业务板块逻辑释义 Expander（降低运营人员认知门槛，严格使用纯净文字，无彩色 Emoji）
+    with st.expander("[运营逻辑解读] 全链路大盘核心指标与归因逻辑", expanded=False):
+        st.markdown(
+            """
+            - **店铺总 GMV vs 广告归因销售额**：
+              系统严密隔离店铺全渠道实际销售总额（GMV）与广告报表直接拉动的归因销售额。当未导入全店销售主表时，大盘严格标明「广告归因销售额」，绝不混淆概念。
+            - **广告产出比 (ROAS) 与保本线**：
+              ROAS = 广告销售额 ÷ 广告花费。行业健康门槛通常为 3.0x 以上；结合各品类毛利率，当实际 ROAS 低于保本 ROAS 时，广告处于实质性失血状态。
+            - **全渠道与平台归因口径**：
+              Walmart 平台默认采用 3 天 / 14 天 Click-Through 归因与 Last Touch 模型。不同平台（如 Wayfair / eBay）数据按渠道物理对齐，避免无依据的粗暴汇总。
+            """
+        )
 
     sec_data_raw = st.session_state.get("section_data", {})
     daily_trend_df_raw = st.session_state.get("daily_trend_df")
@@ -152,22 +166,16 @@ def render_dashboard_view():
 
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
-    # 3. 下方双卡片联动 (统一 .card 类，去噪图表)
+    # 3. 下方双卡片联动 (// FIX: 【任务 1】改用 Streamlit 原生 st.container(border=True) 容器，彻底杜绝 HTML 标签外泄)
     c_left, c_right = st.columns([1.8, 1.0])
 
     with c_left:
-        st.markdown(
-            """
-            <div class="card">
-                <div class="card-title">
-                    <span>销售与广告趋势</span>
-                    <span style="font-size: 12px; font-weight: 500; color: #86868B; background: #F5F5F7; padding: 4px 10px; border-radius: 8px;">
-                        真实走势
-                    </span>
-                </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        with st.container(border=True):
+            trend_h1, trend_h2 = st.columns([3, 1])
+            with trend_h1:
+                st.markdown("**销售与广告趋势**")
+            with trend_h2:
+                st.caption("真实走势")
 
         fig_trend = go.Figure()
 
@@ -243,19 +251,14 @@ def render_dashboard_view():
             st.plotly_chart(fig_trend, use_container_width=True)
         else:
             st.info("上传更多包含日期粒度的报表后，将自动展示时间序列走势曲线。")
-        st.markdown("</div>", unsafe_allow_html=True)
 
     with c_right:
-        st.markdown(
-            """
-            <div class="card">
-                <div class="card-title">
-                    <span>广告花费渠道分布</span>
-                    <span style="font-size: 13px; color: #86868B; font-weight: normal;">真实构成</span>
-                </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        with st.container(border=True):
+            donut_h1, donut_h2 = st.columns([3, 1])
+            with donut_h1:
+                st.markdown("**广告花费渠道分布**")
+            with donut_h2:
+                st.caption("真实构成")
 
         # // FIX: 彻底移除硬编码 [52, 24, 14, 10]，提取平台/设备/页面真实分布
         plat_df = sec_data.get("platform")
@@ -318,4 +321,4 @@ def render_dashboard_view():
         else:
             st.info("载入平台终端或广告活动报表后，将自动展示各渠道的花费构成。")
 
-        st.markdown("</div>", unsafe_allow_html=True)
+
